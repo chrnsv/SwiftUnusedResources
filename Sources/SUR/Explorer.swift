@@ -155,7 +155,7 @@ class Explorer {
         let ext = fullPath.extension
         
         switch ext {
-        case "png", "jpg":
+        case "png", "jpg", "pdf", "gif":
             try explore(image: resource, path: fullPath)
             
         case "xcassets":
