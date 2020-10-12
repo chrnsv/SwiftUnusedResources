@@ -2,14 +2,19 @@
 
 `sur` is commandline tool that helps you to keep image resources of Xcode project on track.
 
-### Install
+### Installation
+
+#### Using [Mint](https://github.com/yonaskolb/Mint):
+```bash
+mint install mugabe/SwiftUnusedResources
+```
 
 #### Compile from source
 
 ```bash
 > git clone https://github.com/mugabe/SwiftUnusedResources.git
 > cd SwiftUnusedResources
-> swift compile -c release
+> swift build -c release
 > cp .build/release/sur /usr/local/bin/sur
 ```
 
