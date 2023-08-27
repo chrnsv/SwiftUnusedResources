@@ -5,9 +5,13 @@ class ImageLiteralVisitor: SyntaxVisitor {
     private let register: ImageRegister
     
     @discardableResult
-    init(_ node: ObjectLiteralExprSyntax, _ register: @escaping ImageRegister) {
+    init(
+        viewMode: SyntaxTreeViewMode = .sourceAccurate,
+        _ node: MacroExpansionExprSyntax,
+        _ register: @escaping ImageRegister
+    ) {
         self.register = register
-        super.init()
+        super.init(viewMode: viewMode)
         walk(node)
     }
     

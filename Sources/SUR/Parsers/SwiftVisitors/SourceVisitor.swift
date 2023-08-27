@@ -8,10 +8,15 @@ class SourceVisitor: SyntaxVisitor {
     private var hasSwiftUI = false
     
     @discardableResult
-    init(_ url: URL, _ node: SourceFileSyntax, _ register: @escaping ImageRegister) {
+    init(
+        viewMode: SyntaxTreeViewMode = .sourceAccurate,
+        _ url: URL,
+        _ node: SourceFileSyntax,
+        _ register: @escaping ImageRegister
+    ) {
         self.url = url
         self.register = register
-        super.init()
+        super.init(viewMode: viewMode)
         walk(node)
     }
 
@@ -35,8 +40,8 @@ class SourceVisitor: SyntaxVisitor {
         return super.visit(node)
     }
     
-    override func visit(_ node: ObjectLiteralExprSyntax) -> SyntaxVisitorContinueKind {
-        if (node.identifier.text != "#imageLiteral") {
+    override func visit(_ node: MacroExpansionExprSyntax) -> SyntaxVisitorContinueKind {
+        if (node.macro.text != "imageLiteral") {
             return .skipChildren
         }
 

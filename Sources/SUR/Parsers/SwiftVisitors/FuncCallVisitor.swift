@@ -7,9 +7,16 @@ class FuncCallVisitor: SyntaxVisitor {
     private var name: String?
     
     @discardableResult
-    init(_ url: URL, _ node: FunctionCallExprSyntax, _ register: @escaping ImageRegister, uiKit: Bool, swiftUI: Bool) {
+    init(
+        viewMode: SyntaxTreeViewMode = .sourceAccurate,
+        _ url: URL,
+        _ node: FunctionCallExprSyntax,
+        _ register: @escaping ImageRegister,
+        uiKit: Bool,
+        swiftUI: Bool
+    ) {
         self.register = register
-        super.init()
+        super.init(viewMode: viewMode)
         
         walk(node.calledExpression)
         
