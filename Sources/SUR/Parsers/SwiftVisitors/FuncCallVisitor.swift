@@ -100,7 +100,7 @@ class FuncCallVisitor: SyntaxVisitor {
     
     private func matchComment(text: String) -> String? {
         guard
-            let regex = try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/\\/|\\*+)?\\s*image:\\s*(.*?)\\s*$"),
+            let regex = try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/|\\*+)?\\s*image:\\s*(.*?)\\s*$"),
             let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
             let range = Range(match.range(at: 1), in: text)
         else {
@@ -116,12 +116,12 @@ class FuncCallVisitor: SyntaxVisitor {
         }
         
         for piece in trivia {
-            if case .docLineComment(let c) = piece {
+            if case .lineComment(let c) = piece {
                 if let c = self.matchComment(text: c) {
                     return c
                 }
             }
-            else if case .docBlockComment(let c) = piece {
+            else if case .blockComment(let c) = piece {
                 if let c = self.matchComment(text: c) {
                     return c
                 }

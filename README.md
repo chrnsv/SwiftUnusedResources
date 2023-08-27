@@ -1,15 +1,16 @@
-## SUR
+# SUR
 
 `sur` is commandline tool that helps you to keep image resources of Xcode project on track.
 
-### Installation
+## Installation
 
-#### Using [Mint](https://github.com/yonaskolb/Mint):
-```bash
+### Using [Mint](https://github.com/yonaskolb/Mint)
+
+```shell
 mint install mugabe/SwiftUnusedResources
 ```
 
-#### Compile from source
+### Compile from source
 
 ```bash
 > git clone https://github.com/mugabe/SwiftUnusedResources.git
@@ -18,28 +19,29 @@ mint install mugabe/SwiftUnusedResources
 > cp .build/release/sur /usr/local/bin/sur
 ```
 
-#### Cocoapods
+### Cocoapods
 
-```
+```ruby
 pod 'SwiftUnusedResources'
 ```
 
 `sur` will be installed at `${PODS_ROOT}/SwiftUnusedResources/sur`
 
-### Usage
+## Usage
 
 Just type `sur` under your project's path
+
 ```shell
 > sur
 ```
 
 or
 
-### Xcode integration
+## Xcode integration
 
-Add a "Run Script" phase to each target. 
+Add a "Run Script" phase to each target.
 
-```
+```shell
 "${PODS_ROOT}/SwiftUnusedResources/sur"
 ```
 
@@ -66,16 +68,16 @@ Image("button" + (enabled ? "Normal" : "Gray"))
 // only buttonNormal and buttonGray would be marked
 ```
 
-However, if no strings were used in image creation `sur` will fail with guess. 
+However, if no strings were used in image creation `sur` will fail with guess.
 In this case (as in case if guessed pattern too wide) you can specify regexp pattern on your own by doc comment.
 
 ```swift
-/// image: icon(Small|Large)
+// image: icon(Small|Large)
 UIImage(named: "icon" + someting())
 
-/// image: frame\d+
+// image: frame\d+
 Image("frame\(count)")
 
-/// image: (apple|banana|whiskey)
+// image: (apple|banana|whiskey)
 Image(image)
 ```
