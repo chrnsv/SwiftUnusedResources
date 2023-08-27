@@ -34,6 +34,27 @@ class SourceVisitor: SyntaxVisitor {
         return .skipChildren
     }
     
+    override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
+        guard
+            let base1 = node.base,
+            base1.syntaxNodeType == MemberAccessExprSyntax.self,
+            let base1x = MemberAccessExprSyntax(base1._syntaxNode),
+            base1x.name.text == "image",
+            let base2 = base1x.base,
+            base2.syntaxNodeType == IdentifierExprSyntax.self,
+            let base2x = IdentifierExprSyntax(base2._syntaxNode),
+            base2x.identifier.text == "R"
+        else {
+            return .visitChildren
+        }
+        
+        let name = node.name.text
+        
+        register(.rswift(name))
+        
+        return .skipChildren
+    }
+    
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         FuncCallVisitor(url, node, register, uiKit: hasUIKit, swiftUI: hasSwiftUI)
 
