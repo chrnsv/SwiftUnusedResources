@@ -8,10 +8,15 @@ class SourceVisitor: SyntaxVisitor {
     private var hasSwiftUI = false
     
     @discardableResult
-    init(_ url: URL, _ node: SourceFileSyntax, _ register: @escaping ImageRegister) {
+    init(
+        viewMode: SyntaxTreeViewMode = .sourceAccurate,
+        _ url: URL,
+        _ node: SourceFileSyntax,
+        _ register: @escaping ImageRegister
+    ) {
         self.url = url
         self.register = register
-        super.init()
+        super.init(viewMode: viewMode)
         walk(node)
     }
 
@@ -29,14 +34,35 @@ class SourceVisitor: SyntaxVisitor {
         return .skipChildren
     }
     
+    override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
+        guard
+            let base1 = node.base,
+            base1.syntaxNodeType == MemberAccessExprSyntax.self,
+            let base1x = MemberAccessExprSyntax(base1._syntaxNode),
+            base1x.name.text == "image",
+            let base2 = base1x.base,
+            base2.syntaxNodeType == IdentifierExprSyntax.self,
+            let base2x = IdentifierExprSyntax(base2._syntaxNode),
+            base2x.identifier.text == "R"
+        else {
+            return .visitChildren
+        }
+        
+        let name = node.name.text
+        
+        register(.rswift(name))
+        
+        return .skipChildren
+    }
+    
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         FuncCallVisitor(url, node, register, uiKit: hasUIKit, swiftUI: hasSwiftUI)
 
         return super.visit(node)
     }
     
-    override func visit(_ node: ObjectLiteralExprSyntax) -> SyntaxVisitorContinueKind {
-        if (node.identifier.text != "#imageLiteral") {
+    override func visit(_ node: MacroExpansionExprSyntax) -> SyntaxVisitorContinueKind {
+        if (node.macro.text != "imageLiteral") {
             return .skipChildren
         }
 

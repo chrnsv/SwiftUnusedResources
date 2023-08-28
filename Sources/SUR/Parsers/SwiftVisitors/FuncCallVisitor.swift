@@ -7,9 +7,16 @@ class FuncCallVisitor: SyntaxVisitor {
     private var name: String?
     
     @discardableResult
-    init(_ url: URL, _ node: FunctionCallExprSyntax, _ register: @escaping ImageRegister, uiKit: Bool, swiftUI: Bool) {
+    init(
+        viewMode: SyntaxTreeViewMode = .sourceAccurate,
+        _ url: URL,
+        _ node: FunctionCallExprSyntax,
+        _ register: @escaping ImageRegister,
+        uiKit: Bool,
+        swiftUI: Bool
+    ) {
         self.register = register
-        super.init()
+        super.init(viewMode: viewMode)
         
         walk(node.calledExpression)
         
@@ -18,7 +25,7 @@ class FuncCallVisitor: SyntaxVisitor {
         }
 
         if (name == "UIImage") {
-            if (!uiKit) {
+            if (!uiKit && !swiftUI) {
                 warn(url: url, node: node, "UIImage used but UIKit not imported")
                 return
             }
@@ -93,7 +100,7 @@ class FuncCallVisitor: SyntaxVisitor {
     
     private func matchComment(text: String) -> String? {
         guard
-            let regex = try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/\\/|\\*+)?\\s*image:\\s*(.*?)\\s*$"),
+            let regex = try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/|\\*+)?\\s*image:\\s*(.*?)\\s*$"),
             let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
             let range = Range(match.range(at: 1), in: text)
         else {
@@ -109,12 +116,12 @@ class FuncCallVisitor: SyntaxVisitor {
         }
         
         for piece in trivia {
-            if case .docLineComment(let c) = piece {
+            if case .lineComment(let c) = piece {
                 if let c = self.matchComment(text: c) {
                     return c
                 }
             }
-            else if case .docBlockComment(let c) = piece {
+            else if case .blockComment(let c) = piece {
                 if let c = self.matchComment(text: c) {
                     return c
                 }
@@ -140,27 +147,6 @@ class FuncCallVisitor: SyntaxVisitor {
     
     override func visit(_ node: IdentifierExprSyntax) -> SyntaxVisitorContinueKind {
         name = node.identifier.text
-        
-        return .skipChildren
-    }
-    
-    override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-        guard
-            let base1 = node.base,
-            base1.syntaxNodeType == MemberAccessExprSyntax.self,
-            let base1x = MemberAccessExprSyntax(base1._syntaxNode),
-            base1x.name.text == "image",
-            let base2 = base1x.base,
-            base2.syntaxNodeType == IdentifierExprSyntax.self,
-            let base2x = IdentifierExprSyntax(base2._syntaxNode),
-            base2x.identifier.text == "R"
-        else {
-            return .skipChildren
-        }
-        
-        let name = node.name.text
-        
-        register(.rswift(name))
         
         return .skipChildren
     }

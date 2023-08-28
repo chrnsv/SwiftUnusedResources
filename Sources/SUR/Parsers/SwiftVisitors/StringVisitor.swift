@@ -4,9 +4,9 @@ import SwiftSyntax
 class StringVisitor: SyntaxVisitor {
     var value: String = ""
 
-    init(_ node: SyntaxProtocol) {
-        super.init()
-        node.children.forEach { syntax in
+    init(viewMode: SyntaxTreeViewMode = .sourceAccurate, _ node: SyntaxProtocol) {
+        super.init(viewMode: viewMode)
+        node.children(viewMode: viewMode).forEach { syntax in
             walk(syntax)
         }
     }
