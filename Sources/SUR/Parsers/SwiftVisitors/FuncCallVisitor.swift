@@ -66,6 +66,10 @@ class FuncCallVisitor: SyntaxVisitor {
                 return
             }
             
+            if (tuple.label?.text != nil) {
+                return
+            }
+            
             if let comment = findComment(tuple) {
                 register(.regexp(comment))
                 return
@@ -148,6 +152,10 @@ class FuncCallVisitor: SyntaxVisitor {
     override func visit(_ node: IdentifierExprSyntax) -> SyntaxVisitorContinueKind {
         name = node.identifier.text
         
+        return .skipChildren
+    }
+    
+    override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
         return .skipChildren
     }
 }
