@@ -7,8 +7,12 @@ typealias ImageRegister = (ExploreUsage) -> ()
 
 class SwiftParser {
     @discardableResult
-    init(_ path: Path, _ register: @escaping ImageRegister) throws {
+    init(
+        _ path: Path,
+        _ showWarnings: Bool,
+        _ register: @escaping ImageRegister
+    ) throws {
         let source = try SyntaxParser.parse(path.url)
-        SourceVisitor(path.url, source, register)
+        SourceVisitor(showWarnings: showWarnings, path.url, source, register)
     }
 }

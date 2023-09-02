@@ -3,6 +3,7 @@ import SwiftSyntax
 
 class FuncCallVisitor: SyntaxVisitor {
     private let register: ImageRegister
+    private let showWarnings: Bool
     
     private var name: String?
     
@@ -13,9 +14,12 @@ class FuncCallVisitor: SyntaxVisitor {
         _ node: FunctionCallExprSyntax,
         _ register: @escaping ImageRegister,
         uiKit: Bool,
-        swiftUI: Bool
+        swiftUI: Bool,
+        showWarnings: Bool
     ) {
         self.register = register
+        self.showWarnings = showWarnings
+        
         super.init(viewMode: viewMode)
         
         walk(node.calledExpression)
