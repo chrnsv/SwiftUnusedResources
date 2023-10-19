@@ -4,18 +4,23 @@ import SwiftSyntax
 class SourceVisitor: SyntaxVisitor {
     private let url: URL
     private let register: ImageRegister
+    private let showWarnings: Bool
     private var hasUIKit = false
     private var hasSwiftUI = false
+    
     
     @discardableResult
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
+        showWarnings: Bool,
         _ url: URL,
         _ node: SourceFileSyntax,
         _ register: @escaping ImageRegister
     ) {
         self.url = url
         self.register = register
+        self.showWarnings = showWarnings
+        
         super.init(viewMode: viewMode)
         walk(node)
     }
@@ -56,7 +61,7 @@ class SourceVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        FuncCallVisitor(url, node, register, uiKit: hasUIKit, swiftUI: hasSwiftUI)
+        FuncCallVisitor(url, node, register, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings)
 
         return super.visit(node)
     }

@@ -43,7 +43,7 @@ class Explorer {
     }
     
     func explore() throws {
-        print("🔨 Loading project \(project.lastComponent)".bold)
+        print("🔨 Loading project \(projectPath.lastComponent)".bold)
         let xcodeproj = try XcodeProj(path: projectPath)
         
         try xcodeproj.pbxproj.nativeTargets.forEach { target in
@@ -233,9 +233,9 @@ class Explorer {
                 return
             }
             
-            try SwiftParser(fullPath, { usage in
+            try SwiftParser(fullPath, showWarnings) { usage in
                 self.exploredUsages.append(usage)
-            })
+            }
         }
     }
 }
