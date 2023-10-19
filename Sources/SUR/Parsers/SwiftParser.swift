@@ -1,5 +1,5 @@
 import Foundation
-import SwiftSyntaxParser
+import SwiftParser
 import SwiftSyntax
 import PathKit
 
@@ -12,7 +12,8 @@ class SwiftParser {
         _ showWarnings: Bool,
         _ register: @escaping ImageRegister
     ) throws {
-        let source = try SyntaxParser.parse(path.url)
+        let file = try String(contentsOf: path.url)
+        let source = Parser.parse(source: file)
         SourceVisitor(showWarnings: showWarnings, path.url, source, register)
     }
 }

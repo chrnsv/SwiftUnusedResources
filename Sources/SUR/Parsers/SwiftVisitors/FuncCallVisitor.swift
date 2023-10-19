@@ -34,11 +34,11 @@ class FuncCallVisitor: SyntaxVisitor {
                 return
             }
 
-            if (node.argumentList.count < 1) {
+            if (node.arguments.count < 1) {
                 return
             }
             
-            node.argumentList.forEach { tuple in
+            node.arguments.forEach { tuple in
                 if (tuple.label?.text != "named") {
                     return
                 }
@@ -62,11 +62,11 @@ class FuncCallVisitor: SyntaxVisitor {
             }
         }
         else if (name == "Image" && swiftUI) {
-            if (node.argumentList.count != 1) {
+            if (node.arguments.count != 1) {
                 return
             }
             
-            guard let tuple = node.argumentList.first else {
+            guard let tuple = node.arguments.first else {
                 return
             }
             
@@ -153,8 +153,8 @@ class FuncCallVisitor: SyntaxVisitor {
         return nil
     }
     
-    override func visit(_ node: IdentifierExprSyntax) -> SyntaxVisitorContinueKind {
-        name = node.identifier.text
+    override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
+        name = node.baseName.text
         
         return .skipChildren
     }

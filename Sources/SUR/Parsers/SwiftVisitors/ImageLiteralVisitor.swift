@@ -15,7 +15,7 @@ class ImageLiteralVisitor: SyntaxVisitor {
         walk(node)
     }
     
-    override func visit(_ node: TupleExprElementSyntax) -> SyntaxVisitorContinueKind {
+    override func visit(_ node: LabeledExprSyntax) -> SyntaxVisitorContinueKind {
         if (node.label?.text != "resourceName") {
             return .skipChildren
         }
