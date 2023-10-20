@@ -66,9 +66,7 @@ struct CLI: AsyncParsableCommand {
                 showWarnings: showWarnings
             )
             
-            let start = Date()
             try await explorer.explore()
-            print("AAA", Date().timeIntervalSince(start))
         }
         catch {
             throw RuntimeError("❌ Processing failed: \(error)")
