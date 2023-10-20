@@ -25,6 +25,33 @@ enum ExploreUsage {
     case rswift(_ identifier: String)
 }
 
+actor Storage {
+    private(set) var exploredResources: [ExploreResource] = []
+    private(set) var exploredUsages: [ExploreUsage] = []
+    private(set) var unused: [ExploreResource] = []
+    
+    func addUsage(_ usage: ExploreUsage) {
+        exploredUsages.append(usage)
+    }
+    
+    func addUsages(_ usages: [ExploreUsage]) {
+        exploredUsages.append(contentsOf: usages)
+    }
+    
+    func addResource(_ resource: ExploreResource) {
+        exploredResources.append(resource)
+    }
+    
+    func addUnused(_ resource: ExploreResource) {
+        unused.append(resource)
+    }
+    
+    func clean() {
+        exploredResources.removeAll()
+        exploredUsages.removeAll()
+        unused.removeAll()
+    }
+}
 
 class Explorer {
     private let projectPath: Path
@@ -32,8 +59,7 @@ class Explorer {
     private let target: String?
     private let showWarnings: Bool
 
-    private var exploredResources: [ExploreResource] = []
-    private var exploredUsages: [ExploreUsage] = []
+    private let storage = Storage()
     
     init(projectPath: Path, sourceRoot: Path, target: String?, showWarnings: Bool) throws {
         self.projectPath = projectPath
@@ -42,27 +68,28 @@ class Explorer {
         self.showWarnings = showWarnings
     }
     
-    func explore() throws {
+    func explore() async throws {
         print("🔨 Loading project \(projectPath.lastComponent)".bold)
         let xcodeproj = try XcodeProj(path: projectPath)
         
-        try xcodeproj.pbxproj.nativeTargets.forEach { target in
+        for target in xcodeproj.pbxproj.nativeTargets {
             if self.target == nil || (self.target != nil && target.name == self.target) {
                 print("📦 Processing target \(target.name)".bold)
-                try explore(target: target)
+                try await explore(target: target)
             }
         }
         
         print("🦒 Complete".bold)
     }
     
-    private func analyze() {
-        var unused: [ExploreResource] = []
+    private func analyze() async throws {
+        let exploredResources = await storage.exploredResources
+        let exploredUsages = await storage.exploredUsages
         
-        exploredResources.forEach { resource in
+        for resource in exploredResources {
             var usageCount = 0
             
-            exploredUsages.forEach { usage in
+            for usage in exploredUsages {
                 switch usage {
                 case .string(let value):
                     if resource.name == value {
@@ -96,22 +123,23 @@ class Explorer {
                         
                         print("\(assets): warning: '\(name)' never used")
                     }
-                    unused.append(resource)
+                    await storage.addUnused(resource)
                     
                 case .image:
                     if (showWarnings) {
                         print("\(resource.path): warning: '\(resource.name)' never used")
                     }
-                    unused.append(resource)
+                    await storage.addUnused(resource)
                 }
             }
         }
         
         if !showWarnings {
-            if unused.count > 0 {
-                print("    \(unused.count) unused images found".yellow.bold)
+            let count = await storage.unused.count
+            if count > 0 {
+                print("    \(count) unused images found".yellow.bold)
                 var totalSize = 0
-                unused.forEach { resource in
+                for resource in await storage.unused {
                     var name = resource.path.string
                     if name.starts(with: sourceRoot.string) {
                         name = String(resource.path.string.dropFirst(sourceRoot.string.count + 1))
@@ -129,25 +157,24 @@ class Explorer {
         }
     }
     
-    private func explore(target: PBXNativeTarget) throws {
-        exploredUsages = []
-        exploredResources = []
+    private func explore(target: PBXNativeTarget) async throws {
+        await storage.clean()
         
         guard let resources = try target.resourcesBuildPhase() else {
             // no sources, skip
             print("    No resources, skip")
             return
         }
-        try explore(resources: resources)
+        try await explore(resources: resources)
         
         if let sources = try target.sourcesBuildPhase() {
-            try explore(sources: sources)
+            try await explore(sources: sources)
         }
         
-        analyze()
+        try await analyze()
     }
     
-    private func explore(resource: PBXFileElement) throws {
+    private func explore(resource: PBXFileElement) async throws {
         guard let fullPath = try resource.fullPath(sourceRoot: sourceRoot) else {
             throw ExploreError.notFound(message: "Could not get full path for resource \(resource) (uuid: \(resource.uuid))")
         }
@@ -156,86 +183,100 @@ class Explorer {
         
         switch ext {
         case "png", "jpg", "pdf", "gif":
-            try explore(image: resource, path: fullPath)
+            try await explore(image: resource, path: fullPath)
             
         case "xcassets":
-            try explore(xcassets: resource, path: fullPath)
+            try await explore(xcassets: resource, path: fullPath)
             
         case "xib", "storyboard":
-            try explore(xib: resource, path: fullPath)
+            try await explore(xib: resource, path: fullPath)
             
         default:
             break
         }
     }
     
-    private func explore(resources: PBXResourcesBuildPhase) throws {
+    private func explore(resources: PBXResourcesBuildPhase) async throws {
         guard let files = resources.files else {
             throw ExploreError.notFound(message: "Resource files not found")
         }
         
-        try files.forEach { file in
-            guard let ffile = file.file else {
-                return
+        for file in files {
+            guard let resource = file.file else {
+                continue
             }
             
-            try explore(resource: ffile)
+            try await explore(resource: resource)
         }
     }
     
-    private func explore(xib: PBXFileElement, path: Path) throws {
-        _ = try? XibParser(path, { usage in
-            self.exploredUsages.append(usage)
-        })
+    private func explore(xib: PBXFileElement, path: Path) async throws {
+        let parser = XibParser()
+        
+        let usages = try? parser.parse(path)
+        
+        guard let usages else {
+            return
+        }
+        
+        await storage.addUsages(usages)
     }
     
-    private func explore(xcassets: PBXFileElement, path: Path) throws {
+    private func explore(xcassets: PBXFileElement, path: Path) async throws {
         let files = Glob(pattern: path.string + "**/*.imageset")
         
-        files.forEach { setPath in
-            let setPath = Path(setPath)
+        for file in files {
+            let file = Path(file)
             
-            let exp = ExploreResource(
-                name: setPath.lastComponentWithoutExtension,
+            let resource = ExploreResource(
+                name: file.lastComponentWithoutExtension,
                 type: .asset(assets: path.string),
-                path: setPath.absolute()
+                path: file.absolute()
             )
             
-            exploredResources.append(exp)
+            await storage.addResource(resource)
         }
     }
     
-    private func explore(image: PBXFileElement, path: Path) throws {
-        let exp = ExploreResource(
+    private func explore(image: PBXFileElement, path: Path) async throws {
+        let resource = ExploreResource(
             name: path.lastComponent,
             type: .image,
             path: path
         )
         
-        exploredResources.append(exp)
+        await storage.addResource(resource)
     }
     
-    private func explore(sources: PBXSourcesBuildPhase) throws {
+    private func explore(sources: PBXSourcesBuildPhase) async throws {
         guard let files = sources.files else {
             throw ExploreError.notFound(message: "Source files not found")
         }
         
-        try files.forEach { file in
-            guard let fullPath = try file.file?.fullPath(sourceRoot: sourceRoot) else {
-                return
-            }
-            
-            if fullPath.extension != "swift" {
-                return
-            }
+        let parser = SwiftParser()
+        
+        let usages = try await withThrowingTaskGroup(of: [ExploreUsage].self) { [showWarnings] group in
+            try files.forEach { file in
+                guard let fullPath = try file.file?.fullPath(sourceRoot: sourceRoot) else {
+                    return
+                }
+                
+                if fullPath.extension != "swift" {
+                    return
+                }
 
-            if fullPath.lastComponent == "R.generated.swift" {
-                return
+                if fullPath.lastComponent == "R.generated.swift" {
+                    return
+                }
+                
+                group.addTask {
+                    try parser.parse(fullPath, showWarnings)
+                }
             }
             
-            try SwiftParser(fullPath, showWarnings) { usage in
-                self.exploredUsages.append(usage)
-            }
+            return try await group.reduce(into: [], +=)
         }
+        
+        await storage.addUsages(usages)
     }
 }

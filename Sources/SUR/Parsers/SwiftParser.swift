@@ -3,17 +3,15 @@ import SwiftParser
 import SwiftSyntax
 import PathKit
 
-typealias ImageRegister = (ExploreUsage) -> ()
-
 class SwiftParser {
-    @discardableResult
-    init(
+    func parse(
         _ path: Path,
-        _ showWarnings: Bool,
-        _ register: @escaping ImageRegister
-    ) throws {
+        _ showWarnings: Bool
+    ) throws -> [ExploreUsage] {
         let file = try String(contentsOf: path.url)
         let source = Parser.parse(source: file)
-        SourceVisitor(showWarnings: showWarnings, path.url, source, register)
+        let visitor = SourceVisitor(showWarnings: showWarnings, path.url, source)
+        
+        return visitor.usages
     }
 }

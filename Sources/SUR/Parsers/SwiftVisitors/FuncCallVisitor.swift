@@ -2,22 +2,21 @@ import Foundation
 import SwiftSyntax
 
 class FuncCallVisitor: SyntaxVisitor {
-    private let register: ImageRegister
     private let showWarnings: Bool
     
     private var name: String?
+    
+    private(set) var usages: [ExploreUsage] = []
     
     @discardableResult
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         _ url: URL,
         _ node: FunctionCallExprSyntax,
-        _ register: @escaping ImageRegister,
         uiKit: Bool,
         swiftUI: Bool,
         showWarnings: Bool
     ) {
-        self.register = register
         self.showWarnings = showWarnings
         
         super.init(viewMode: viewMode)
@@ -44,7 +43,7 @@ class FuncCallVisitor: SyntaxVisitor {
                 }
                 
                 if let comment = findComment(tuple) {
-                    register(.regexp(comment))
+                    usages.append(.regexp(comment))
                     return
                 }
                 
@@ -58,7 +57,7 @@ class FuncCallVisitor: SyntaxVisitor {
                     warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
                 }
                 
-                register(.regexp(regex))
+                usages.append(.regexp(regex))
             }
         }
         else if (name == "Image" && swiftUI) {
@@ -75,7 +74,7 @@ class FuncCallVisitor: SyntaxVisitor {
             }
             
             if let comment = findComment(tuple) {
-                register(.regexp(comment))
+                usages.append(.regexp(comment))
                 return
             }
             
@@ -89,8 +88,8 @@ class FuncCallVisitor: SyntaxVisitor {
             if (regex.contains("*")) {
                 warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
             }
-
-            register(.regexp(regex))
+            
+            usages.append(.regexp(regex))
         }
     }
 

@@ -4,14 +4,14 @@ import Rainbow
 import ArgumentParser
 
 @main
-struct CLI: ParsableCommand {
+struct CLI: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Root path of your Xcode project. Default is current.")
     var project: Path?
     
     @Option(name: .shortAndLong, help: "Project's target. Skip to process all targets.")
     var target: String?
     
-    func run() throws {
+    func run() async throws {
         let showWarnings = ProcessInfo.processInfo.environment["XCODE_PRODUCT_BUILD_VERSION"] != nil
 
         let projectPath: Path
@@ -66,7 +66,9 @@ struct CLI: ParsableCommand {
                 showWarnings: showWarnings
             )
             
-            try explorer.explore()
+            let start = Date()
+            try await explorer.explore()
+            print("AAA", Date().timeIntervalSince(start))
         }
         catch {
             throw RuntimeError("❌ Processing failed: \(error)")
