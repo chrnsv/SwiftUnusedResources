@@ -135,11 +135,11 @@ class Explorer {
         }
         
         if !showWarnings {
-            let count = await storage.unused.count
-            if count > 0 {
-                print("    \(count) unused images found".yellow.bold)
+            let unused = await storage.unused
+            if unused.count > 0 {
+                print("    \(unused.count) unused images found".yellow.bold)
                 var totalSize = 0
-                for resource in await storage.unused {
+                unused.forEach { resource in
                     var name = resource.path.string
                     if name.starts(with: sourceRoot.string) {
                         name = String(resource.path.string.dropFirst(sourceRoot.string.count + 1))
