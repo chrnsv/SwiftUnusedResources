@@ -4,9 +4,14 @@ import SwiftSyntax
 import PathKit
 
 class SwiftParser {
+    private let showWarnings: Bool
+    
+    init(showWarnings: Bool) {
+        self.showWarnings = showWarnings
+    }
+    
     func parse(
-        _ path: Path,
-        _ showWarnings: Bool
+        _ path: Path
     ) throws -> [ExploreUsage] {
         let file = try String(contentsOf: path.url)
         let source = Parser.parse(source: file)

@@ -3,56 +3,6 @@ import PathKit
 import XcodeProj
 import Glob
 
-enum ExploreError: Error {
-    case notFound(message: String)
-}
-
-enum ExploreResourceType {
-    case asset(assets: String)
-    case image
-}
-
-struct ExploreResource {
-    let name: String
-    let type: ExploreResourceType
-    let path: Path
-    var usedCount: Int = 0
-}
-
-enum ExploreUsage {
-    case string(_ value: String)
-    case regexp(_ pattern: String)
-    case rswift(_ identifier: String)
-}
-
-actor Storage {
-    private(set) var exploredResources: [ExploreResource] = []
-    private(set) var exploredUsages: [ExploreUsage] = []
-    private(set) var unused: [ExploreResource] = []
-    
-    func addUsage(_ usage: ExploreUsage) {
-        exploredUsages.append(usage)
-    }
-    
-    func addUsages(_ usages: [ExploreUsage]) {
-        exploredUsages.append(contentsOf: usages)
-    }
-    
-    func addResource(_ resource: ExploreResource) {
-        exploredResources.append(resource)
-    }
-    
-    func addUnused(_ resource: ExploreResource) {
-        unused.append(resource)
-    }
-    
-    func clean() {
-        exploredResources.removeAll()
-        exploredUsages.removeAll()
-        unused.removeAll()
-    }
-}
-
 class Explorer {
     private let projectPath: Path
     private let sourceRoot: Path
@@ -223,19 +173,17 @@ class Explorer {
     }
     
     private func explore(xcassets: PBXFileElement, path: Path) async throws {
-        let files = Glob(pattern: path.string + "**/*.imageset")
+        let resources = Glob(pattern: path.string + "**/*.imageset")
+            .map { Path($0) }
+            .map { 
+                ExploreResource(
+                    name: $0.lastComponentWithoutExtension,
+                    type: .asset(assets: path.string),
+                    path: $0.absolute()
+                )
+            }
         
-        for file in files {
-            let file = Path(file)
-            
-            let resource = ExploreResource(
-                name: file.lastComponentWithoutExtension,
-                type: .asset(assets: path.string),
-                path: file.absolute()
-            )
-            
-            await storage.addResource(resource)
-        }
+        await storage.addResources(resources)
     }
     
     private func explore(image: PBXFileElement, path: Path) async throws {
@@ -253,9 +201,9 @@ class Explorer {
             throw ExploreError.notFound(message: "Source files not found")
         }
         
-        let parser = SwiftParser()
+        let parser = SwiftParser(showWarnings: showWarnings)
         
-        let usages = try await withThrowingTaskGroup(of: [ExploreUsage].self) { [showWarnings] group in
+        let usages = try await withThrowingTaskGroup(of: [ExploreUsage].self) { group in
             try files.forEach { file in
                 guard let fullPath = try file.file?.fullPath(sourceRoot: sourceRoot) else {
                     return
@@ -270,13 +218,19 @@ class Explorer {
                 }
                 
                 group.addTask {
-                    try parser.parse(fullPath, showWarnings)
+                    try parser.parse(fullPath)
                 }
             }
             
-            return try await group.reduce(into: [], +=)
+            return try await group.reduce([], +)
         }
         
         await storage.addUsages(usages)
+    }
+}
+
+private extension Explorer {
+    enum ExploreError: Error {
+        case notFound(message: String)
     }
 }
