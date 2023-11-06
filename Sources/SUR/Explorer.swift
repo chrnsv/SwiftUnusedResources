@@ -32,7 +32,7 @@ class Explorer {
         print("🦒 Complete".bold)
     }
     
-    private func analyze() async throws {
+    private func analyze() async {
         let exploredResources = await storage.exploredResources
         let exploredUsages = await storage.exploredUsages
         
@@ -121,7 +121,7 @@ class Explorer {
             try await explore(sources: sources)
         }
         
-        try await analyze()
+        await analyze()
     }
     
     private func explore(resource: PBXFileElement) async throws {
