@@ -7,8 +7,9 @@ enum XibParserError: Error {
 }
 
 class XibParser {
-    @discardableResult
-    init(_ path: Path, _ register: @escaping ImageRegister) throws {
+    func parse(
+        _ path: Path
+    ) throws -> [ExploreUsage] {
         let resources: [AnyResource]?
         
         if (path.extension == "xib") {
@@ -22,13 +23,13 @@ class XibParser {
         else {
             throw XibParserError.wrongExtension
         }
-
-        resources?.forEach { resource in
-            guard let image = resource.resource as? Image else {
-                return
-            }
-
-            register(.string(image.name))
+        
+        guard let resources else {
+            return []
         }
+        
+        return resources
+            .compactMap { $0.resource as? Image }
+            .map {.string($0.name) }
     }
 }
