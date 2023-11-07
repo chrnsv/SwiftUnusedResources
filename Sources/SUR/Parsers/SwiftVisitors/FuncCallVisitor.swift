@@ -23,22 +23,22 @@ class FuncCallVisitor: SyntaxVisitor {
         
         walk(node.calledExpression)
         
-        if (name == nil) {
+        if name == nil {
             return
         }
 
-        if (name == "UIImage") {
-            if (!uiKit && !swiftUI) {
+        if name == "UIImage" {
+            if !uiKit && !swiftUI {
                 warn(url: url, node: node, "UIImage used but UIKit not imported")
                 return
             }
 
-            if (node.arguments.count < 1) {
+            if node.arguments.count < 1 {
                 return
             }
             
             node.arguments.forEach { tuple in
-                if (tuple.label?.text != "named") {
+                if tuple.label?.text != "named" {
                     return
                 }
                 
@@ -48,20 +48,20 @@ class FuncCallVisitor: SyntaxVisitor {
                 }
                 
                 let regex = StringVisitor(tuple).parse()
-                if (regex == ".*") {
+                if regex == ".*" {
                     warn(url: url, node: tuple, "Couldn't guess match, please specify pattern")
                     return
                 }
 
-                if (regex.contains("*")) {
+                if regex.contains("*") {
                     warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
                 }
                 
                 usages.append(.regexp(regex))
             }
         }
-        else if (name == "Image" && swiftUI) {
-            if (node.arguments.count != 1) {
+        else if name == "Image" && swiftUI {
+            if node.arguments.count != 1 {
                 return
             }
             
@@ -69,7 +69,7 @@ class FuncCallVisitor: SyntaxVisitor {
                 return
             }
             
-            if (tuple.label?.text != nil) {
+            if tuple.label?.text != nil {
                 return
             }
             
@@ -80,12 +80,12 @@ class FuncCallVisitor: SyntaxVisitor {
             
             let regex = StringVisitor(tuple).parse()
 
-            if (regex == ".*") {
+            if regex == ".*" {
                 warn(url: url, node: tuple, "Couldn't guess match, please specify pattern")
                 return
             }
 
-            if (regex.contains("*")) {
+            if regex.contains("*") {
                 warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
             }
             
@@ -118,7 +118,7 @@ class FuncCallVisitor: SyntaxVisitor {
     }
     
     private func extractComment(_ trivia: Trivia?) -> String? {
-        guard let trivia = trivia else {
+        guard let trivia else {
             return nil
         }
         
@@ -141,7 +141,7 @@ class FuncCallVisitor: SyntaxVisitor {
     private func findComment(_ node: SyntaxProtocol) -> String? {
         var p: SyntaxProtocol = node
 
-        while (p.parent != nil && p.syntaxNodeType != CodeBlockItemSyntax.self) {
+        while p.parent != nil && p.syntaxNodeType != CodeBlockItemSyntax.self {
             if let comment = extractComment(p.leadingTrivia) {
                 return comment
             }

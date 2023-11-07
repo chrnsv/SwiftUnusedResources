@@ -1,7 +1,7 @@
 import Foundation
+import PathKit
 import SwiftParser
 import SwiftSyntax
-import PathKit
 
 class SwiftParser {
     private let showWarnings: Bool

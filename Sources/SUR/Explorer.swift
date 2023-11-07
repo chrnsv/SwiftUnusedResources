@@ -1,7 +1,7 @@
 import Foundation
+import Glob
 import PathKit
 import XcodeProj
-import Glob
 
 class Explorer {
     private let projectPath: Path
@@ -32,7 +32,7 @@ class Explorer {
         print("🦒 Complete".bold)
     }
     
-    private func analyze() async {
+    private func analyze() async throws {
         let exploredResources = await storage.exploredResources
         let exploredUsages = await storage.exploredUsages
         
@@ -43,21 +43,21 @@ class Explorer {
                 switch usage {
                 case .string(let value):
                     if resource.name == value {
-                        usageCount = usageCount + 1
+                        usageCount += 1
                     }
                     
                 case .regexp(let pattern):
-                    let regex = try! NSRegularExpression(pattern: "^\(pattern)$")
+                    let regex = try NSRegularExpression(pattern: "^\(pattern)$")
                     
                     let range = NSRange(location: 0, length: resource.name.utf16.count)
-                    if (regex.firstMatch(in: resource.name, options: [], range: range) != nil) {
-                        usageCount = usageCount + 1
+                    if regex.firstMatch(in: resource.name, options: [], range: range) != nil {
+                        usageCount += 1
                     }
                     
                 case .rswift(let identifier):
                     let rswift = SwiftIdentifier(name: resource.name)
                     if rswift.description == identifier {
-                        usageCount = usageCount + 1
+                        usageCount += 1
                     }
                 }
             }
@@ -76,7 +76,7 @@ class Explorer {
                     await storage.addUnused(resource)
                     
                 case .image:
-                    if (showWarnings) {
+                    if showWarnings {
                         print("\(resource.path): warning: '\(resource.name)' never used")
                     }
                     await storage.addUnused(resource)
@@ -86,7 +86,7 @@ class Explorer {
         
         if !showWarnings {
             let unused = await storage.unused
-            if unused.count > 0 {
+            if !unused.isEmpty {
                 print("    \(unused.count) unused images found".yellow.bold)
                 var totalSize = 0
                 unused.forEach { resource in
@@ -121,7 +121,7 @@ class Explorer {
             try await explore(sources: sources)
         }
         
-        await analyze()
+        try await analyze()
     }
     
     private func explore(resource: PBXFileElement) async throws {
@@ -175,7 +175,7 @@ class Explorer {
     private func explore(xcassets: PBXFileElement, path: Path) async throws {
         let resources = Glob(pattern: path.string + "**/*.imageset")
             .map { Path($0) }
-            .map { 
+            .map {
                 ExploreResource(
                     name: $0.lastComponentWithoutExtension,
                     type: .asset(assets: path.string),
@@ -222,7 +222,7 @@ class Explorer {
                 }
             }
             
-            return try await group.reduce([], +)
+            return try await group.reduce(into: [], +=)
         }
         
         await storage.addUsages(usages)

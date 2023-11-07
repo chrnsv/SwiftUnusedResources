@@ -44,17 +44,17 @@ class StringVisitor: SyntaxVisitor {
         let first = StringVisitor(node.thenExpression).parse()
         let second = StringVisitor(node.elseExpression).parse()
         
-        if (first == ".*" || second == ".*") {
+        if first == ".*" || second == ".*" {
             value += ".*"
             return .skipChildren
         }
         
-        if (first == "" && second != "") {
+        if first.isEmpty && !second.isEmpty {
             value += "(?:\(second))?"
             return .skipChildren
         }
         
-        if (first != "" && second == "") {
+        if !first.isEmpty && second.isEmpty {
             value += "(?:\(first))?"
             return .skipChildren
         }
