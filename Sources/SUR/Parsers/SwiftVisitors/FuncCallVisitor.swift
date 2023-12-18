@@ -8,7 +8,7 @@ class FuncCallVisitor: SyntaxVisitor {
     
     private(set) var usages: [ExploreUsage] = []
     
-    @discardableResult
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         _ url: URL,

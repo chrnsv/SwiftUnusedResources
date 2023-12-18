@@ -16,7 +16,7 @@ let package = Package(
         .package(url: "https://github.com/IBDecodable/IBDecodable.git", branch: "master"),
         .package(url: "https://github.com/onevcat/Rainbow.git", from: "4.0.1"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.3"),
-        .package(url: "https://github.com/realm/SwiftLint", from: "0.53.0"),
+        .package(url: "https://github.com/realm/SwiftLint", from: "0.54.0"),
     ],
     targets: [
         .executableTarget(

@@ -32,6 +32,7 @@ class Explorer {
         print("🦒 Complete".bold)
     }
     
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private func analyze() async throws {
         let exploredResources = await storage.exploredResources
         let exploredUsages = await storage.exploredUsages
