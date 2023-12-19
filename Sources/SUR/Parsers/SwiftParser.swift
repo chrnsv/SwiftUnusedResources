@@ -1,14 +1,22 @@
 import Foundation
-import SwiftSyntaxParser
-import SwiftSyntax
 import PathKit
-
-typealias ImageRegister = (ExploreUsage) -> ()
+import SwiftParser
+import SwiftSyntax
 
 class SwiftParser {
-    @discardableResult
-    init(_ path: Path, _ register: @escaping ImageRegister) throws {
-        let source = try SyntaxParser.parse(path.url)
-        SourceVisitor(path.url, source, register)
+    private let showWarnings: Bool
+    
+    init(showWarnings: Bool) {
+        self.showWarnings = showWarnings
+    }
+    
+    func parse(
+        _ path: Path
+    ) throws -> [ExploreUsage] {
+        let file = try String(contentsOf: path.url)
+        let source = Parser.parse(source: file)
+        let visitor = SourceVisitor(showWarnings: showWarnings, path.url, source)
+        
+        return visitor.usages
     }
 }

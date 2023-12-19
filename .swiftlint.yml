@@ -1,0 +1,216 @@
+excluded:
+  - .git
+  - .build
+  - Sources/SUR/Utils/SwiftIdentifier.swift
+
+disabled_rules:
+  # Выключаем:
+  - trailing_comma
+  # Карантин:
+  - todo
+
+opt_in_rules:
+  - attributes
+  - closure_body_length
+  - closure_end_indentation
+  - closure_spacing
+  - collection_alignment
+  - comma_inheritance
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - contains_over_range_nil_comparison
+  - convenience_type
+  - discarded_notification_center_observer
+  - discouraged_assert
+  - discouraged_none_name
+  - discouraged_object_literal
+  - empty_collection_literal
+  - empty_string
+  - enum_case_associated_values_count
+  - expiring_todo
+  - explicit_init
+  - file_name_no_space
+  - first_where
+  - flatmap_over_map_reduce
+  - ibinspectable_in_extension
+  - identical_operands
+  - implicit_return
+  - indentation_width
+  - joined_default_parameter
+  - last_where
+  - let_var_whitespace
+  - literal_expression_end_indentation
+  - local_doc_comment
+  - lower_acl_than_parent
+  - modifier_order
+  - multiline_arguments
+  - multiline_arguments_brackets
+  - multiline_function_chains
+  - multiline_literal_brackets
+  - multiline_parameters
+  - multiline_parameters_brackets
+  - nslocalizedstring_key
+  - nslocalizedstring_require_bundle
+  - operator_usage_whitespace
+  - optional_enum_case_matching
+  - overridden_super_call
+  - override_in_extension
+  - pattern_matching_keywords
+  - period_spacing
+  - prefer_self_type_over_type_of_self
+  - prefer_zero_over_explicit_init
+  - prefixed_toplevel_constant
+  - private_subject
+  - prohibited_super_call
+  - reduce_into
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - required_enum_case
+  - return_value_from_void_function
+  - self_binding
+  - sorted_first_last
+  - static_operator
+  - toggle_bool
+  - type_contents_order
+  - unneeded_parentheses_in_closure_argument
+  - unhandled_throwing_task
+  - unowned_variable_capture
+  - untyped_error_in_catch
+  - vertical_parameter_alignment_on_call
+  - vertical_whitespace_between_cases
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+  - yoda_condition
+
+  # Тесты (проверить отдельно)
+  - balanced_xctest_lifecycle
+  - empty_xctest_method
+  - nimble_operator
+  - prefer_nimble
+  - quick_discouraged_call
+  - quick_discouraged_focused_test
+  - quick_discouraged_pending_test
+  - single_test_class
+  - xct_specific_matcher
+
+  # Не можем использовать сейчас
+  # - accessibility_label_for_image
+  # - accessibility_trait_for_button
+  # - test_case_accessibility
+
+  # Нужно решить используем ли мы это правило
+  # - anonymous_argument_in_multiline_closure
+  # - conditional_returns_on_newline
+  # - direct_return
+  # - fallthrough
+  # - force_unwrapping
+  # - function_default_parameter_at_end
+  # - implicitly_unwrapped_optional
+  # - number_separator
+  # - prefer_self_in_static_references
+  # - raw_value_for_camel_cased_codable_enum
+  # - required_deinit
+  # - superfluous_else
+
+  # Ложные срабатывания
+  - array_init
+  - empty_count # (срабатывает на переменные count)
+  # - trailing_closure
+  # - weak_delegate
+
+  # Делаем иначе
+  # - discouraged_optional_boolean
+  # - discouraged_optional_collection
+  # - explicit_acl
+  # - explicit_enum_raw_value
+  # - explicit_top_level_acl
+  # - no_grouping_extension
+  # - prohibited_interface_builder
+  # - switch_case_on_newline
+  # - sorted_enum_cases
+  # - extension_access_modifier
+
+  # Противоречит другим правилам
+  # - object_literal # (discouraged_object_literal)
+  # - explicit_type_interface # (redundant_type_annotation)
+  # - no_extension_access_modifier # (extension_access_modifier)
+
+  # Нужен рефакторинг
+  - fatal_error_message
+  - file_header
+  - file_name
+  # - file_types_order
+  - legacy_multiple
+  # - legacy_objc_type
+  # - no_magic_numbers
+  - private_action
+  - private_outlet
+  - redundant_self_in_closure
+  - shorthand_optional_binding
+  - sorted_imports
+  - strict_fileprivate
+  - strong_iboutlet
+  - unavailable_function
+
+  # Можно использовать в фреймворках
+  # - missing_docs
+
+
+
+type_contents_order:
+  order:
+    - case
+    - associated_type
+    - type_alias
+    - type_property
+    - type_method
+    - ib_inspectable
+    - ib_outlet
+    - instance_property
+    - initializer
+    - view_life_cycle_method
+    - other_method
+    - ib_action
+    - subscript
+    - subtype
+    - deinitializer
+
+trailing_whitespace:
+  ignores_empty_lines: true
+
+implicit_return:
+  included:
+    - closure
+    - getter
+
+indentation_width:
+  include_comments: false
+  include_multiline_strings: false
+
+statement_position:
+  statement_mode: uncuddled_else
+
+line_length:
+  warning: 180
+  ignores_urls: true
+
+type_body_length: 
+  warning: 225
+
+nesting:
+  type_level:
+    warning: 5
+
+identifier_name:
+  min_length: 1
+  max_length: 65
+
+type_name:
+  min_length: 3
+  max_length: 65
+  excluded: 
+    - ID
+    - Ad
+
+large_tuple: 4

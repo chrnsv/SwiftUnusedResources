@@ -20,7 +20,7 @@ class StringVisitor: SyntaxVisitor {
         return .skipChildren
     }
     
-    override func visit(_ node: TupleExprElementSyntax) -> SyntaxVisitorContinueKind {
+    override func visit(_ node: LabeledExprSyntax) -> SyntaxVisitorContinueKind {
         value += StringVisitor(node).parse()
         return .skipChildren
     }
@@ -30,31 +30,31 @@ class StringVisitor: SyntaxVisitor {
         return .skipChildren
     }
     
-    override func visit(_ node: IdentifierExprSyntax) -> SyntaxVisitorContinueKind {
+    override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
         value += ".*"
         return .skipChildren
     }
     
-    override func visit(_ node: SubscriptExprSyntax) -> SyntaxVisitorContinueKind {
+    override func visit(_ node: SubscriptCallExprSyntax) -> SyntaxVisitorContinueKind {
         value += ".*"
         return .skipChildren
     }
     
     override func visit(_ node: TernaryExprSyntax) -> SyntaxVisitorContinueKind {
-        let first = StringVisitor(node.firstChoice).parse()
-        let second = StringVisitor(node.secondChoice).parse()
+        let first = StringVisitor(node.thenExpression).parse()
+        let second = StringVisitor(node.elseExpression).parse()
         
-        if (first == ".*" || second == ".*") {
+        if first == ".*" || second == ".*" {
             value += ".*"
             return .skipChildren
         }
         
-        if (first == "" && second != "") {
+        if first.isEmpty && !second.isEmpty {
             value += "(?:\(second))?"
             return .skipChildren
         }
         
-        if (first != "" && second == "") {
+        if !first.isEmpty && second.isEmpty {
             value += "(?:\(first))?"
             return .skipChildren
         }

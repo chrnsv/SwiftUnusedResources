@@ -2,91 +2,94 @@ import Foundation
 import SwiftSyntax
 
 class FuncCallVisitor: SyntaxVisitor {
-    private let register: ImageRegister
+    private let showWarnings: Bool
     
     private var name: String?
     
-    @discardableResult
+    private(set) var usages: [ExploreUsage] = []
+    
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         _ url: URL,
         _ node: FunctionCallExprSyntax,
-        _ register: @escaping ImageRegister,
         uiKit: Bool,
-        swiftUI: Bool
+        swiftUI: Bool,
+        showWarnings: Bool
     ) {
-        self.register = register
+        self.showWarnings = showWarnings
+        
         super.init(viewMode: viewMode)
         
         walk(node.calledExpression)
         
-        if (name == nil) {
+        if name == nil {
             return
         }
 
-        if (name == "UIImage") {
-            if (!uiKit && !swiftUI) {
+        if name == "UIImage" {
+            if !uiKit && !swiftUI {
                 warn(url: url, node: node, "UIImage used but UIKit not imported")
                 return
             }
 
-            if (node.argumentList.count < 1) {
+            if node.arguments.count < 1 {
                 return
             }
             
-            node.argumentList.forEach { tuple in
-                if (tuple.label?.text != "named") {
+            node.arguments.forEach { tuple in
+                if tuple.label?.text != "named" {
                     return
                 }
                 
                 if let comment = findComment(tuple) {
-                    register(.regexp(comment))
+                    usages.append(.regexp(comment))
                     return
                 }
                 
                 let regex = StringVisitor(tuple).parse()
-                if (regex == ".*") {
+                if regex == ".*" {
                     warn(url: url, node: tuple, "Couldn't guess match, please specify pattern")
                     return
                 }
 
-                if (regex.contains("*")) {
+                if regex.contains("*") {
                     warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
                 }
                 
-                register(.regexp(regex))
+                usages.append(.regexp(regex))
             }
         }
-        else if (name == "Image" && swiftUI) {
-            if (node.argumentList.count != 1) {
+        else if name == "Image" && swiftUI {
+            if node.arguments.count != 1 {
                 return
             }
             
-            guard let tuple = node.argumentList.first else {
+            guard let tuple = node.arguments.first else {
                 return
             }
             
-            if (tuple.label?.text != nil) {
+            if tuple.label?.text != nil {
                 return
             }
             
             if let comment = findComment(tuple) {
-                register(.regexp(comment))
+                usages.append(.regexp(comment))
                 return
             }
             
             let regex = StringVisitor(tuple).parse()
 
-            if (regex == ".*") {
+            if regex == ".*" {
                 warn(url: url, node: tuple, "Couldn't guess match, please specify pattern")
                 return
             }
 
-            if (regex.contains("*")) {
+            if regex.contains("*") {
                 warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
             }
-
-            register(.regexp(regex))
+            
+            usages.append(.regexp(regex))
         }
     }
 
@@ -115,7 +118,7 @@ class FuncCallVisitor: SyntaxVisitor {
     }
     
     private func extractComment(_ trivia: Trivia?) -> String? {
-        guard let trivia = trivia else {
+        guard let trivia else {
             return nil
         }
         
@@ -138,7 +141,7 @@ class FuncCallVisitor: SyntaxVisitor {
     private func findComment(_ node: SyntaxProtocol) -> String? {
         var p: SyntaxProtocol = node
 
-        while (p.parent != nil && p.syntaxNodeType != CodeBlockItemSyntax.self) {
+        while p.parent != nil && p.syntaxNodeType != CodeBlockItemSyntax.self {
             if let comment = extractComment(p.leadingTrivia) {
                 return comment
             }
@@ -149,8 +152,8 @@ class FuncCallVisitor: SyntaxVisitor {
         return nil
     }
     
-    override func visit(_ node: IdentifierExprSyntax) -> SyntaxVisitorContinueKind {
-        name = node.identifier.text
+    override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
+        name = node.baseName.text
         
         return .skipChildren
     }
