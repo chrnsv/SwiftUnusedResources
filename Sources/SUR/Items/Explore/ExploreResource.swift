@@ -1,6 +1,6 @@
 //
 //  File.swift
-//  
+//
 //
 //  Created by Alexander Chernousov on 30.10.2023.
 //
@@ -18,5 +18,4 @@ struct ExploreResource {
         case asset(assets: String)
         case image
     }
-
 }

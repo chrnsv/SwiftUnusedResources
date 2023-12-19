@@ -14,7 +14,7 @@ class ImageLiteralVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: LabeledExprSyntax) -> SyntaxVisitorContinueKind {
-        if (node.label?.text != "resourceName") {
+        if node.label?.text != "resourceName" {
             return .skipChildren
         }
         
@@ -23,4 +23,3 @@ class ImageLiteralVisitor: SyntaxVisitor {
         return .skipChildren
     }
 }
-

@@ -27,10 +27,10 @@ class SourceVisitor: SyntaxVisitor {
         // TODO: get import name without .description
         let imp = node.path.description
 
-        if (imp == "UIKit" || imp == "WatchKit") {
+        if imp == "UIKit" || imp == "WatchKit" {
             hasUIKit = true
         }
-        else if (imp == "SwiftUI") {
+        else if imp == "SwiftUI" {
             hasSwiftUI = true
         }
 
@@ -66,7 +66,7 @@ class SourceVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: MacroExpansionExprSyntax) -> SyntaxVisitorContinueKind {
-        if (node.macroName.text != "imageLiteral") {
+        if node.macroName.text != "imageLiteral" {
             return .skipChildren
         }
 

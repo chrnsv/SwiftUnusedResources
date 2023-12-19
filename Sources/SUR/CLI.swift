@@ -1,7 +1,7 @@
+import ArgumentParser
 import Foundation
 import PathKit
 import Rainbow
-import ArgumentParser
 
 @main
 struct CLI: AsyncParsableCommand {
@@ -40,7 +40,7 @@ struct CLI: AsyncParsableCommand {
             throw RuntimeError("Wrong project file specified")
         }
 
-        var targetName: String? = nil
+        var targetName: String?
 
         if let target {
             targetName = target
