@@ -1,7 +1,7 @@
 excluded:
   - .git
   - .build
-  - Sources/SUR/Utils/SwiftIdentifier.swift
+  - Sources/SURCore/Utils/SwiftIdentifier.swift
 
 disabled_rules:
   # Выключаем:
