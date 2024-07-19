@@ -30,7 +30,7 @@ let package = Package(
                 .target(name: "SURCore"),
              ],
             plugins: [
-                .plugin(name: "SwiftLintPlugin", package: "SwiftLint")
+                .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
             ]
         ),
         .plugin(
