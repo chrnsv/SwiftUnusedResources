@@ -7,7 +7,8 @@ let package = Package(
     platforms: [.macOS(.v12)],
     products: [
         .executable(name: "sur", targets: ["SUR"]),
-        .library(name: "SURCore", targets: ["SURCore"])
+        .plugin(name: "SURBuildToolPlugin", targets: ["SURBuildToolPlugin"]),
+        .library(name: "SURCore", targets: ["SURCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-syntax", from: "509.0.0"),
@@ -26,10 +27,17 @@ let package = Package(
                 "PathKit",
                 "Rainbow",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                .target(name: "SURCore")
+                .target(name: "SURCore"),
              ],
             plugins: [
                 .plugin(name: "SwiftLintPlugin", package: "SwiftLint")
+            ]
+        ),
+        .plugin(
+            name: "SURBuildToolPlugin",
+            capability: .buildTool(),
+            dependencies: [
+                .target(name: "SUR"),
             ]
         ),
         .target(
