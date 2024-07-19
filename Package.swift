@@ -9,7 +9,7 @@ let package = Package(
         .executable(name: "sur", targets: ["SUR"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-syntax", from: "509.0.0"),
+        .package(url: "https://github.com/apple/swift-syntax", from: "510.0.2"),
         .package(url: "https://github.com/kylef/PathKit.git", from: "1.0.1"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.5"),
         .package(url: "https://github.com/tuist/XcodeProj.git", from: "8.22.0"),
