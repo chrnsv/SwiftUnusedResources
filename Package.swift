@@ -28,16 +28,13 @@ let package = Package(
                 "Rainbow",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .target(name: "SURCore"),
-             ],
-            plugins: [
-                .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
-            ]
+             ]
         ),
         .plugin(
             name: "SURBuildToolPlugin",
             capability: .buildTool(),
             dependencies: [
-                .target(name: "SUR"),
+                .target(name: "SURBinary"),
             ]
         ),
         .target(
@@ -50,11 +47,12 @@ let package = Package(
                 "Rainbow",
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
-             ],
-            plugins: [
-                .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
-            ]
-        )
+             ]
+        ),
+        .binaryTarget(
+            name: "SURBinary",
+            path: "./sur.artifactbundle.zip"
+        ),
     ],
     swiftLanguageVersions: [.v5]
 )
