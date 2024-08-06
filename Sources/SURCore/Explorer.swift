@@ -1,9 +1,10 @@
 import Foundation
 import Glob
 import PathKit
+import Rainbow
 import XcodeProj
 
-class Explorer {
+public final class Explorer {
     private let projectPath: Path
     private let sourceRoot: Path
     private let target: String?
@@ -11,14 +12,14 @@ class Explorer {
 
     private let storage = Storage()
     
-    init(projectPath: Path, sourceRoot: Path, target: String?, showWarnings: Bool) throws {
+    public init(projectPath: Path, sourceRoot: Path, target: String?, showWarnings: Bool) throws {
         self.projectPath = projectPath
         self.sourceRoot = sourceRoot
         self.target = target
         self.showWarnings = showWarnings
     }
     
-    func explore() async throws {
+    public func explore() async throws {
         print("🔨 Loading project \(projectPath.lastComponent)".bold)
         let xcodeproj = try XcodeProj(path: projectPath)
         
