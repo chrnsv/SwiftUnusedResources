@@ -27,6 +27,15 @@ pod 'SwiftUnusedResources'
 
 `sur` will be installed at `${PODS_ROOT}/SwiftUnusedResources/sur`
 
+### Xcode Package Dependency
+
+Use the following link to add SwiftLint as a Package Dependency to an Xcode
+project:
+
+```bash
+git@github.com:mugabe/SwiftUnusedResources.git
+```
+
 ## Usage
 
 Just type `sur` under your project's path
@@ -39,13 +48,27 @@ or
 
 ## Xcode integration
 
-Add a "Run Script" phase to each target.
+### Cocoapods installation
+
+Add a `Run Script` phase to each target.
 
 ```shell
 "${PODS_ROOT}/SwiftUnusedResources/sur"
 ```
 
+### SPM installation
+
+Add the `SURBuildToolPlugin` to the `Run Build Tool Plug-ins` phase of the `Build Phases` for the each target.
+
 On every project build `sur` will throw warnings about unused images.
+
+### When running on CI
+
+Add a script with the content: 
+
+```shell
+defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -bool YES
+```
 
 ## How it works
 

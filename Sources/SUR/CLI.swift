@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import PathKit
 import Rainbow
+import SURCore
 
 @main
 struct CLI: AsyncParsableCommand {
