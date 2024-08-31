@@ -43,7 +43,7 @@ class FuncCallVisitor: SyntaxVisitor {
                 }
                 
                 if let comment = findComment(tuple) {
-                    usages.append(.regexp(comment))
+                    usages.append(.regexp(comment, .image))
                     return
                 }
                 
@@ -57,7 +57,7 @@ class FuncCallVisitor: SyntaxVisitor {
                     warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
                 }
                 
-                usages.append(.regexp(regex))
+                usages.append(.regexp(regex, .image))
             }
         }
         else if name == "Image" && swiftUI {
@@ -74,7 +74,7 @@ class FuncCallVisitor: SyntaxVisitor {
             }
             
             if let comment = findComment(tuple) {
-                usages.append(.regexp(comment))
+                usages.append(.regexp(comment, .image))
                 return
             }
             
@@ -89,7 +89,7 @@ class FuncCallVisitor: SyntaxVisitor {
                 warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
             }
             
-            usages.append(.regexp(regex))
+            usages.append(.regexp(regex, .image))
         }
     }
 

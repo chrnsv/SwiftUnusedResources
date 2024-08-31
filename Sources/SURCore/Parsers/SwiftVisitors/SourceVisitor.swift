@@ -53,7 +53,7 @@ class SourceVisitor: SyntaxVisitor {
         
         let name = node.declName.baseName.text
         
-        usages.append(.rswift(name))
+        usages.append(.rswift(name, .image))
         
         return .skipChildren
     }

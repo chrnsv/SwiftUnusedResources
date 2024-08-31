@@ -43,12 +43,12 @@ public final class Explorer {
             
             for usage in exploredUsages {
                 switch usage {
-                case .string(let value):
+                case .string(let value, _):
                     if resource.name == value {
                         usageCount += 1
                     }
                     
-                case .regexp(let pattern):
+                case .regexp(let pattern, _):
                     let regex = try NSRegularExpression(pattern: "^\(pattern)$")
                     
                     let range = NSRange(location: 0, length: resource.name.utf16.count)
@@ -56,7 +56,7 @@ public final class Explorer {
                         usageCount += 1
                     }
                     
-                case .rswift(let identifier):
+                case .rswift(let identifier, _):
                     let rswift = SwiftIdentifier(name: resource.name)
                     if rswift.description == identifier {
                         usageCount += 1

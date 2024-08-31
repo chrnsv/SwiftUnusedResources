@@ -18,7 +18,7 @@ class ImageLiteralVisitor: SyntaxVisitor {
             return .skipChildren
         }
         
-        usages.append(.string(StringVisitor(node.expression).parse()))
+        usages.append(.string(StringVisitor(node.expression).parse(), .image))
         
         return .skipChildren
     }

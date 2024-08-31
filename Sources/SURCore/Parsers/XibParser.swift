@@ -26,7 +26,7 @@ class XibParser {
         
         return resources
             .compactMap { $0.resource as? Image }
-            .map { .string($0.name) }
+            .map { .string($0.name, .image) }
     }
 }
 

@@ -8,7 +8,12 @@
 import Foundation
 
 enum ExploreUsage {
-    case string(_ value: String)
-    case regexp(_ pattern: String)
-    case rswift(_ identifier: String)
+    case string(_ value: String, _ kind: Kind)
+    case regexp(_ pattern: String, _ kind: Kind)
+    case rswift(_ identifier: String, _ kind: Kind)
+    
+    enum Kind {
+        case image
+        case color
+    }
 }
