@@ -77,7 +77,7 @@ public final class Explorer {
                     }
                     await storage.addUnused(resource)
                     
-                case .image:
+                case .file:
                     if showWarnings {
                         print("\(resource.path): warning: '\(resource.name)' never used")
                     }
@@ -181,6 +181,7 @@ public final class Explorer {
                 ExploreResource(
                     name: $0.lastComponentWithoutExtension,
                     type: .asset(assets: path.string),
+                    kind: .image,
                     path: $0.absolute()
                 )
             }
@@ -191,7 +192,8 @@ public final class Explorer {
     private func explore(image: PBXFileElement, path: Path) async throws {
         let resource = ExploreResource(
             name: path.lastComponent,
-            type: .image,
+            type: .file,
+            kind: .image,
             path: path
         )
         
