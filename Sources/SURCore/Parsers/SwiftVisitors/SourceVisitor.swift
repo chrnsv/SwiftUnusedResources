@@ -38,41 +38,64 @@ class SourceVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-        guard
-            let base1 = node.base,
-            base1.syntaxNodeType == MemberAccessExprSyntax.self,
-            let base1x = MemberAccessExprSyntax(base1._syntaxNode),
-            base1x.declName.baseName.text == "image",
-            let base2 = base1x.base,
-            base2.syntaxNodeType == DeclReferenceExprSyntax.self,
-            let base2x = DeclReferenceExprSyntax(base2._syntaxNode),
-            base2x.baseName.text == "R"
-        else {
+        let newUsages = ExploreKind.allCases
+            .compactMap { findR(in: node, with: $0) }
+        
+        guard !newUsages.isEmpty else {
             return .visitChildren
         }
         
-        let name = node.declName.baseName.text
-        
-        usages.append(.rswift(name, .image))
+        usages.append(contentsOf: newUsages)
         
         return .skipChildren
     }
     
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        let visitor = FuncCallVisitor(url, node, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings)
-        usages.append(contentsOf: visitor.usages)
+        let newUsages = ExploreKind.allCases
+            .map { FuncCallVisitor(url, node, kind: $0, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings) }
+            .flatMap { $0.usages }
+        
+        usages.append(contentsOf: newUsages)
 
         return super.visit(node)
     }
     
     override func visit(_ node: MacroExpansionExprSyntax) -> SyntaxVisitorContinueKind {
-        if node.macroName.text != "imageLiteral" {
+        guard let kind = ExploreKind(literal: node.macroName.text) else {
             return .skipChildren
         }
-
-        let visitor = ImageLiteralVisitor(node)
+        
+        let visitor = LiteralVisitor(node, kind: kind)
         usages.append(contentsOf: visitor.usages)
 
         return .skipChildren
+    }
+    
+    private func findR(
+        in node: MemberAccessExprSyntax,
+        with kind: ExploreKind
+    ) -> ExploreUsage? {
+        guard
+            let possibleKind = node.base?.as(MemberAccessExprSyntax.self),
+            possibleKind.declName.baseName.text == kind.rawValue,
+            let possibleR = possibleKind.base?.as(DeclReferenceExprSyntax.self),
+            possibleR.baseName.text == "R"
+        else {
+            return nil
+        }
+        
+        let name = node.declName.baseName.text
+        
+        return .rswift(name, kind)
+    }
+}
+
+private extension ExploreKind {
+    init?(literal: String) {
+        switch literal {
+        case "imageLiteral": self = .image
+        case "colorLiteral": self = .color
+        default: return nil
+        }
     }
 }

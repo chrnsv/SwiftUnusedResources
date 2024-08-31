@@ -41,7 +41,7 @@ public final class Explorer {
         for resource in exploredResources {
             var usageCount = 0
             
-            for usage in exploredUsages {
+            for usage in exploredUsages where usage.kind == resource.kind {
                 switch usage {
                 case .string(let value, _):
                     if resource.name == value {
@@ -134,7 +134,7 @@ public final class Explorer {
         let ext = fullPath.extension
         
         switch ext {
-        case "png", "jpg", "pdf", "gif":
+        case "png", "jpg", "pdf", "gif", "svg":
             try await explore(image: resource, path: fullPath)
             
         case "xcassets":
@@ -175,18 +175,25 @@ public final class Explorer {
     }
     
     private func explore(xcassets: PBXFileElement, path: Path) async throws {
-        let resources = Glob(pattern: path.string + "**/*.imageset")
+        let resources = ExploreKind.allCases
+            .flatMap { explore(xcassets: xcassets, path: path, kind: $0) }
+        
+        await storage.addResources(resources)
+    }
+    
+    private func explore(xcassets: PBXFileElement, path: Path, kind: ExploreKind) -> [ExploreResource] {
+        let resources = Glob(pattern: path.string + kind.assets)
             .map { Path($0) }
             .map {
                 ExploreResource(
                     name: $0.lastComponentWithoutExtension,
                     type: .asset(assets: path.string),
-                    kind: .image,
+                    kind: kind,
                     path: $0.absolute()
                 )
             }
         
-        await storage.addResources(resources)
+        return resources
     }
     
     private func explore(image: PBXFileElement, path: Path) async throws {
@@ -236,5 +243,24 @@ public final class Explorer {
 private extension Explorer {
     enum ExploreError: Error {
         case notFound(message: String)
+    }
+}
+
+private extension ExploreKind {
+    var assets: String {
+        switch self {
+        case .image: "**/*.imageset"
+        case .color: "**/*.colorset"
+        }
+    }
+}
+
+private extension ExploreUsage {
+    var kind: ExploreKind {
+        switch self {
+        case .string(_, let kind): kind
+        case .regexp(_, let kind): kind
+        case .rswift(_, let kind): kind
+        }
     }
 }

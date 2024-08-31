@@ -11,17 +11,12 @@ import PathKit
 struct ExploreResource {
     let name: String
     let type: ResourceType
-    let kind: Kind
+    let kind: ExploreKind
     let path: Path
     var usedCount: Int = 0
     
     enum ResourceType {
         case asset(assets: String)
         case file
-    }
-    
-    enum Kind {
-        case image
-        case color
     }
 }
