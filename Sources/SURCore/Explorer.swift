@@ -20,6 +20,7 @@ public final class Explorer {
     }
     
     public func explore() async throws {
+        let start = Date()
         print("🔨 Loading project \(projectPath.lastComponent)".bold)
         let xcodeproj = try XcodeProj(path: projectPath)
         
@@ -31,6 +32,9 @@ public final class Explorer {
         }
         
         print("🦒 Complete".bold)
+        let duration = Date().timeIntervalSince(start)
+        
+        print("Duration: \(duration)")
     }
     
     // swiftlint:disable:next cyclomatic_complexity function_body_length
@@ -58,7 +62,7 @@ public final class Explorer {
                     
                 case .rswift(let identifier, _):
                     let rswift = SwiftIdentifier(name: resource.name)
-                    if rswift.description == identifier {
+                    if rswift.value.trimmingCharacters(in: CharacterSet(charactersIn: "`")) == identifier {
                         usageCount += 1
                     }
                 }
@@ -69,17 +73,22 @@ public final class Explorer {
                 case .asset(let assets):
                     if showWarnings {
                         var name = resource.name
-                        if resource.path.string.starts(with: assets) {
-                            name = NSString(string: String(resource.path.string.dropFirst(assets.count + 1))).deletingPathExtension
-                        }
                         
-                        print("\(assets): warning: '\(name)' never used")
+                        for path in resource.pathes {
+                            if path.string.starts(with: assets) {
+                                name = NSString(string: String(path.string.dropFirst(assets.count + 1))).deletingPathExtension
+                            }
+                            
+                            print("\(assets): warning: '\(name)' never used")
+                        }
                     }
                     await storage.addUnused(resource)
                     
                 case .file:
                     if showWarnings {
-                        print("\(resource.path): warning: '\(resource.name)' never used")
+                        for path in resource.pathes {
+                            print("\(path): warning: '\(resource.name)' never used")
+                        }
                     }
                     await storage.addUnused(resource)
                 }
@@ -92,14 +101,20 @@ public final class Explorer {
                 print("    \(unused.count) unused images found".yellow.bold)
                 var totalSize = 0
                 unused.forEach { resource in
-                    var name = resource.path.string
-                    if name.starts(with: sourceRoot.string) {
-                        name = String(resource.path.string.dropFirst(sourceRoot.string.count + 1))
+                    for path in resource.pathes {
+                        var name = switch resource.kind {
+                        case .asset: path.string
+                        case .string: "\(resource.name), \(path.string)"
+                        }
+                        
+                        if name.starts(with: sourceRoot.string) {
+                            name = String(path.string.dropFirst(sourceRoot.string.count + 1))
+                        }
+                        
+                        let size = path.size
+                        print("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
+                        totalSize += size
                     }
-                    
-                    let size = resource.path.size
-                    print("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
-                    totalSize += size
                 }
                 print("    \(totalSize.humanFileSize) total".yellow)
             }
@@ -148,17 +163,52 @@ public final class Explorer {
         }
     }
     
+    private func explore(path: Path) async throws {
+        print(path)
+        let files = Glob(pattern: path.string + "**/*.strings")
+            .map { Path($0) }
+        
+        let resources = files
+            .compactMap { path in
+                NSDictionary(contentsOfFile: path.string)
+                    .flatMap { $0 as? [String: String] }
+                    .map { (path, $0.keys) }
+            }
+            .flatMap { path, keys in
+                keys.map { ($0, path) }
+            }
+            .reduce(into: [:]) { result, element in
+                result[element.0, default: []].append(element.1)
+            }
+            .map { key, pathes in
+                ExploreResource(
+                    name: key,
+                    type: .file,
+                    kind: .string,
+                    pathes: pathes
+                )
+            }
+        
+        await storage.addResources(resources)
+    }
+    
     private func explore(resources: PBXResourcesBuildPhase) async throws {
         guard let files = resources.files else {
             throw ExploreError.notFound(message: "Resource files not found")
         }
         
-        for file in files {
-            guard let resource = file.file else {
-                continue
+        let resources = files
+            .compactMap { $0.file.flatMap { Resource(element: $0, root: sourceRoot) } }
+            .toSet()
+        
+        for resource in resources {
+            switch resource {
+            case .file(let file):
+                try await explore(resource: file)
+                
+            case .group(let group):
+                try await explore(path: group)
             }
-            
-            try await explore(resource: resource)
         }
     }
     
@@ -175,21 +225,21 @@ public final class Explorer {
     }
     
     private func explore(xcassets: PBXFileElement, path: Path) async throws {
-        let resources = ExploreKind.allCases
+        let resources = ExploreKind.Asset.allCases
             .flatMap { explore(xcassets: xcassets, path: path, kind: $0) }
         
         await storage.addResources(resources)
     }
     
-    private func explore(xcassets: PBXFileElement, path: Path, kind: ExploreKind) -> [ExploreResource] {
+    private func explore(xcassets: PBXFileElement, path: Path, kind: ExploreKind.Asset) -> [ExploreResource] {
         let resources = Glob(pattern: path.string + kind.assets)
             .map { Path($0) }
             .map {
                 ExploreResource(
                     name: $0.lastComponentWithoutExtension,
                     type: .asset(assets: path.string),
-                    kind: kind,
-                    path: $0.absolute()
+                    kind: .asset(kind),
+                    pathes: [$0.absolute()]
                 )
             }
         
@@ -200,8 +250,8 @@ public final class Explorer {
         let resource = ExploreResource(
             name: path.lastComponent,
             type: .file,
-            kind: .image,
-            path: path
+            kind: .asset(.image),
+            pathes: [path]
         )
         
         await storage.addResource(resource)
@@ -241,12 +291,34 @@ public final class Explorer {
 }
 
 private extension Explorer {
+    enum Resource: Hashable {
+        case file(PBXFileReference)
+        case group(Path)
+        
+        init?(element: PBXFileElement, root: Path) {
+            switch element {
+            case let file as PBXFileReference:
+                self = .file(file)
+                
+            case let group as PBXVariantGroup:
+                guard let path = try? group.fullPath(sourceRoot: root) else {
+                    return nil
+                }
+                
+                self = .group(path)
+                
+            default:
+                return nil
+            }
+        }
+    }
+    
     enum ExploreError: Error {
         case notFound(message: String)
     }
 }
 
-private extension ExploreKind {
+private extension ExploreKind.Asset {
     var assets: String {
         switch self {
         case .image: "**/*.imageset"
@@ -263,4 +335,8 @@ private extension ExploreUsage {
         case .rswift(_, let kind): kind
         }
     }
+}
+
+private extension Sequence where Element: Hashable {
+    func toSet() -> Set<Element> { Set(self) }
 }

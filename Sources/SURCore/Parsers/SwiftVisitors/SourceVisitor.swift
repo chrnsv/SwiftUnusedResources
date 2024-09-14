@@ -51,7 +51,7 @@ class SourceVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        let newUsages = ExploreKind.allCases
+        let newUsages = ExploreKind.Asset.allCases
             .map { FuncCallVisitor(url, node, kind: $0, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings) }
             .flatMap { $0.usages }
         
@@ -75,26 +75,44 @@ class SourceVisitor: SyntaxVisitor {
         in node: MemberAccessExprSyntax,
         with kind: ExploreKind
     ) -> ExploreUsage? {
-        guard
-            let possibleKind = node.base?.as(MemberAccessExprSyntax.self),
-            possibleKind.declName.baseName.text == kind.rawValue,
-            let possibleR = possibleKind.base?.as(DeclReferenceExprSyntax.self),
-            possibleR.baseName.text == "R"
-        else {
-            return nil
+        switch kind {
+        case .asset:
+            guard
+                let possibleKind = node.base?.as(MemberAccessExprSyntax.self),
+                possibleKind.declName.baseName.text == kind.rawValue,
+                let possibleR = possibleKind.base?.as(DeclReferenceExprSyntax.self),
+                possibleR.baseName.text == "R"
+            else {
+                return nil
+            }
+            
+            let name = node.declName.baseName.text
+            
+            return .rswift(name, kind)
+            
+        case .string:
+            guard
+                let possibleFileName = node.base?.as(MemberAccessExprSyntax.self),
+                let possibleKind = possibleFileName.base?.as(MemberAccessExprSyntax.self),
+                possibleKind.declName.baseName.text == kind.rawValue,
+                let possibleR = possibleKind.base?.as(DeclReferenceExprSyntax.self),
+                possibleR.baseName.text == "R"
+            else {
+                return nil
+            }
+            
+            let name = node.declName.baseName.text
+            
+            return .rswift(name, kind)
         }
-        
-        let name = node.declName.baseName.text
-        
-        return .rswift(name, kind)
     }
 }
 
 private extension ExploreKind {
     init?(literal: String) {
         switch literal {
-        case "imageLiteral": self = .image
-        case "colorLiteral": self = .color
+        case "imageLiteral": self = .asset(.image)
+        case "colorLiteral": self = .asset(.color)
         default: return nil
         }
     }

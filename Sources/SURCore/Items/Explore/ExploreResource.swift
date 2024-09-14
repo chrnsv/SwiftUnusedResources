@@ -12,7 +12,7 @@ struct ExploreResource {
     let name: String
     let type: ResourceType
     let kind: ExploreKind
-    let path: Path
+    let pathes: [Path]
     var usedCount: Int = 0
     
     enum ResourceType {
