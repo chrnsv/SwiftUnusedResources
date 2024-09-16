@@ -3,20 +3,37 @@ import Glob
 import PathKit
 import Rainbow
 import XcodeProj
+import Yams
 
 public final class Explorer {
     private let projectPath: Path
     private let sourceRoot: Path
     private let target: String?
     private let showWarnings: Bool
+    private let excludedResources: [String]
+    private let excludedSources: [Path]
 
     private let storage = Storage()
     
-    public init(projectPath: Path, sourceRoot: Path, target: String?, showWarnings: Bool) throws {
+    public init(
+        projectPath: Path,
+        sourceRoot: Path,
+        target: String?,
+        showWarnings: Bool
+    ) throws {
         self.projectPath = projectPath
         self.sourceRoot = sourceRoot
         self.target = target
         self.showWarnings = showWarnings
+        
+        let configuration = Self.configuration(from: sourceRoot + "sur.yml")
+        
+        excludedSources = configuration?.exclude.sources
+            .map { Path($0) }
+            .map { $0.isAbsolute ? $0 : sourceRoot + $0 }
+            ?? []
+        
+        excludedResources = configuration?.exclude.resources ?? []
     }
     
     public func explore() async throws {
@@ -40,6 +57,10 @@ public final class Explorer {
         
         for resource in exploredResources {
             var usageCount = 0
+            
+            if excludedResources.contains(resource.name) {
+                continue
+            }
             
             for usage in exploredUsages where usage.kind == resource.kind {
                 switch usage {
@@ -198,7 +219,7 @@ public final class Explorer {
     
     private func explore(image: PBXFileElement, path: Path) async throws {
         let resource = ExploreResource(
-            name: path.lastComponent,
+            name: path.lastComponentWithoutExtension,
             type: .file,
             kind: .image,
             path: path
@@ -223,8 +244,8 @@ public final class Explorer {
                 if fullPath.extension != "swift" {
                     return
                 }
-
-                if fullPath.lastComponent == "R.generated.swift" {
+                
+                if excludedSources.contains(fullPath) {
                     return
                 }
                 
@@ -243,6 +264,13 @@ public final class Explorer {
 private extension Explorer {
     enum ExploreError: Error {
         case notFound(message: String)
+    }
+}
+
+private extension Explorer {
+    static func configuration(using decoder: YAMLDecoder = .init(), from path: Path) -> Configuration? {
+        let data = try? Data(contentsOf: path.url)
+        return data.flatMap { try? decoder.decode(Configuration.self, from: $0) }
     }
 }
 
