@@ -1,6 +1,6 @@
 //
-//  File.swift
-//  
+//  Configuration.swift
+//
 //
 //  Created by Alexander Chernousov on 16.09.2024.
 //
