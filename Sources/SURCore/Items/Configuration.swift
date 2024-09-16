@@ -7,10 +7,10 @@
 
 import Foundation
 
-public struct Configuration: Codable {
-    public let exclude: Exclude
+struct Configuration: Codable {
+    let exclude: Exclude
     
-    public struct Exclude: Codable {
+    struct Exclude: Codable {
         let sources: [String]
         let resources: [String]
     }
