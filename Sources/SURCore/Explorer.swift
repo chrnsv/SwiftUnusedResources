@@ -26,13 +26,14 @@ public final class Explorer {
         self.target = target
         self.showWarnings = showWarnings
         
-        let configuration = try Self.configuration(from: sourceRoot + "sur.yml")
+        let configuration = Self.configuration(from: sourceRoot + "sur.yml")
         
-        excludedSources = configuration.exclude.sources
+        excludedSources = configuration?.exclude.sources
             .map { Path($0) }
             .map { $0.isAbsolute ? $0 : sourceRoot + $0 }
+            ?? []
         
-        excludedResources = configuration.exclude.resources
+        excludedResources = configuration?.exclude.resources ?? []
     }
     
     public func explore() async throws {
@@ -258,8 +259,8 @@ private extension Explorer {
 }
 
 private extension Explorer {
-    static func configuration(using decoder: YAMLDecoder = .init(), from path: Path) throws -> Configuration {
-        let data = try Data(contentsOf: path.url)
-        return try decoder.decode(Configuration.self, from: data)
+    static func configuration(using decoder: YAMLDecoder = .init(), from path: Path) -> Configuration? {
+        let data = try? Data(contentsOf: path.url)
+        return data.flatMap { try? decoder.decode(Configuration.self, from: $0) }
     }
 }
