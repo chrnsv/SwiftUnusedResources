@@ -12,6 +12,7 @@ public final class Explorer {
     private let showWarnings: Bool
     private let excludedResources: [String]
     private let excludedSources: [Path]
+    private let excludedAssets: [String]
 
     private let storage = Storage()
     
@@ -28,12 +29,13 @@ public final class Explorer {
         
         let configuration = Self.configuration(from: sourceRoot + "sur.yml")
         
-        excludedSources = configuration?.exclude.sources
+        excludedSources = configuration?.exclude?.sources?
             .map { Path($0) }
             .map { $0.isAbsolute ? $0 : sourceRoot + $0 }
             ?? []
         
-        excludedResources = configuration?.exclude.resources ?? []
+        excludedResources = configuration?.exclude?.resources ?? []
+        excludedAssets = configuration?.exclude?.assets ?? []
     }
     
     public func explore() async throws {
@@ -203,6 +205,10 @@ public final class Explorer {
     }
     
     private func explore(xcassets: PBXFileElement, path: Path, kind: ExploreKind) -> [ExploreResource] {
+        guard !excludedAssets.contains(path.lastComponentWithoutExtension) else {
+            return []
+        }
+        
         let resources = Glob(pattern: path.string + kind.assets)
             .map { Path($0) }
             .map {
