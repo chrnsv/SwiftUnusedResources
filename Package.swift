@@ -18,7 +18,8 @@ let package = Package(
         .package(url: "https://github.com/IBDecodable/IBDecodable.git", from: "0.6.1"),
         .package(url: "https://github.com/onevcat/Rainbow.git", from: "4.0.1"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
-        .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", exact: "0.57.0"),
+        .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", from: "0.57.0"),
+        .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.3")
     ],
     targets: [
         .executableTarget(
@@ -50,6 +51,7 @@ let package = Package(
                 "Rainbow",
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
+                .product(name: "Yams", package: "Yams"),
              ],
             plugins: [
                 .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
