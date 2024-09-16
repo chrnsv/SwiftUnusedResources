@@ -13,6 +13,7 @@ public final class Explorer {
     private let excludedResources: [String]
     private let excludedSources: [Path]
     private let excludedAssets: [String]
+    private let kinds: Set<ExploreKind>
 
     private let storage = Storage()
     
@@ -36,6 +37,8 @@ public final class Explorer {
         
         excludedResources = configuration?.exclude?.resources ?? []
         excludedAssets = configuration?.exclude?.assets ?? []
+        
+        kinds = Set(configuration?.kinds?.map { $0.toKind() } ?? ExploreKind.allCases)
     }
     
     public func explore() async throws {
@@ -198,7 +201,7 @@ public final class Explorer {
     }
     
     private func explore(xcassets: PBXFileElement, path: Path) async throws {
-        let resources = ExploreKind.allCases
+        let resources = kinds
             .flatMap { explore(xcassets: xcassets, path: path, kind: $0) }
         
         await storage.addResources(resources)
@@ -239,7 +242,7 @@ public final class Explorer {
             throw ExploreError.notFound(message: "Source files not found")
         }
         
-        let parser = SwiftParser(showWarnings: showWarnings)
+        let parser = SwiftParser(showWarnings: showWarnings, kinds: kinds)
         
         let usages = try await withThrowingTaskGroup(of: [ExploreUsage].self) { group in
             try files.forEach { file in
@@ -295,6 +298,15 @@ private extension ExploreUsage {
         case .string(_, let kind): kind
         case .regexp(_, let kind): kind
         case .rswift(_, let kind): kind
+        }
+    }
+}
+
+private extension Configuration.Kind {
+    func toKind() -> ExploreKind {
+        switch self {
+        case .image: .image
+        case .color: .color
         }
     }
 }

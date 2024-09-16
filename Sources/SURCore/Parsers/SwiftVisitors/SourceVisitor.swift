@@ -4,6 +4,7 @@ import SwiftSyntax
 class SourceVisitor: SyntaxVisitor {
     private let url: URL
     private let showWarnings: Bool
+    private let kinds: Set<ExploreKind>
     private var hasUIKit = false
     private var hasSwiftUI = false
     
@@ -13,11 +14,13 @@ class SourceVisitor: SyntaxVisitor {
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         showWarnings: Bool,
+        kinds: Set<ExploreKind>,
         _ url: URL,
         _ node: SourceFileSyntax
     ) {
         self.url = url
         self.showWarnings = showWarnings
+        self.kinds = kinds
         
         super.init(viewMode: viewMode)
         walk(node)
@@ -38,7 +41,7 @@ class SourceVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-        let newUsages = ExploreKind.allCases
+        let newUsages = kinds
             .compactMap { findR(in: node, with: $0) }
         
         guard !newUsages.isEmpty else {
@@ -51,7 +54,7 @@ class SourceVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        let newUsages = ExploreKind.allCases
+        let newUsages = kinds
             .map { FuncCallVisitor(url, node, kind: $0, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings) }
             .flatMap { $0.usages }
         
