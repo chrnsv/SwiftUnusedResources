@@ -12,6 +12,8 @@ public final class Explorer {
     private let showWarnings: Bool
     private let excludedResources: [String]
     private let excludedSources: [Path]
+    private let excludedAssets: [String]
+    private let kinds: Set<ExploreKind>
 
     private let storage = Storage()
     
@@ -28,12 +30,15 @@ public final class Explorer {
         
         let configuration = Self.configuration(from: sourceRoot + "sur.yml")
         
-        excludedSources = configuration?.exclude.sources
+        excludedSources = configuration?.exclude?.sources?
             .map { Path($0) }
             .map { $0.isAbsolute ? $0 : sourceRoot + $0 }
             ?? []
         
-        excludedResources = configuration?.exclude.resources ?? []
+        excludedResources = configuration?.exclude?.resources ?? []
+        excludedAssets = configuration?.exclude?.assets ?? []
+        
+        kinds = Set(configuration?.kinds?.map { $0.toKind() } ?? ExploreKind.allCases)
     }
     
     public func explore() async throws {
@@ -62,14 +67,14 @@ public final class Explorer {
                 continue
             }
             
-            for usage in exploredUsages {
+            for usage in exploredUsages where usage.kind == resource.kind {
                 switch usage {
-                case .string(let value):
+                case .string(let value, _):
                     if resource.name == value {
                         usageCount += 1
                     }
                     
-                case .regexp(let pattern):
+                case .regexp(let pattern, _):
                     let regex = try NSRegularExpression(pattern: "^\(pattern)$")
                     
                     let range = NSRange(location: 0, length: resource.name.utf16.count)
@@ -77,7 +82,7 @@ public final class Explorer {
                         usageCount += 1
                     }
                     
-                case .rswift(let identifier):
+                case .rswift(let identifier, _):
                     let rswift = SwiftIdentifier(name: resource.name)
                     if rswift.description == identifier {
                         usageCount += 1
@@ -98,7 +103,7 @@ public final class Explorer {
                     }
                     await storage.addUnused(resource)
                     
-                case .image:
+                case .file:
                     if showWarnings {
                         print("\(resource.path): warning: '\(resource.name)' never used")
                     }
@@ -155,7 +160,7 @@ public final class Explorer {
         let ext = fullPath.extension
         
         switch ext {
-        case "png", "jpg", "pdf", "gif":
+        case "png", "jpg", "pdf", "gif", "svg":
             try await explore(image: resource, path: fullPath)
             
         case "xcassets":
@@ -196,23 +201,36 @@ public final class Explorer {
     }
     
     private func explore(xcassets: PBXFileElement, path: Path) async throws {
-        let resources = Glob(pattern: path.string + "**/*.imageset")
+        let resources = kinds
+            .flatMap { explore(xcassets: xcassets, path: path, kind: $0) }
+        
+        await storage.addResources(resources)
+    }
+    
+    private func explore(xcassets: PBXFileElement, path: Path, kind: ExploreKind) -> [ExploreResource] {
+        guard !excludedAssets.contains(path.lastComponentWithoutExtension) else {
+            return []
+        }
+        
+        let resources = Glob(pattern: path.string + kind.assets)
             .map { Path($0) }
             .map {
                 ExploreResource(
                     name: $0.lastComponentWithoutExtension,
                     type: .asset(assets: path.string),
+                    kind: kind,
                     path: $0.absolute()
                 )
             }
         
-        await storage.addResources(resources)
+        return resources
     }
     
     private func explore(image: PBXFileElement, path: Path) async throws {
         let resource = ExploreResource(
             name: path.lastComponentWithoutExtension,
-            type: .image,
+            type: .file,
+            kind: .image,
             path: path
         )
         
@@ -224,7 +242,7 @@ public final class Explorer {
             throw ExploreError.notFound(message: "Source files not found")
         }
         
-        let parser = SwiftParser(showWarnings: showWarnings)
+        let parser = SwiftParser(showWarnings: showWarnings, kinds: kinds)
         
         let usages = try await withThrowingTaskGroup(of: [ExploreUsage].self) { group in
             try files.forEach { file in
@@ -262,5 +280,33 @@ private extension Explorer {
     static func configuration(using decoder: YAMLDecoder = .init(), from path: Path) -> Configuration? {
         let data = try? Data(contentsOf: path.url)
         return data.flatMap { try? decoder.decode(Configuration.self, from: $0) }
+    }
+}
+
+private extension ExploreKind {
+    var assets: String {
+        switch self {
+        case .image: "**/*.imageset"
+        case .color: "**/*.colorset"
+        }
+    }
+}
+
+private extension ExploreUsage {
+    var kind: ExploreKind {
+        switch self {
+        case .string(_, let kind): kind
+        case .regexp(_, let kind): kind
+        case .rswift(_, let kind): kind
+        }
+    }
+}
+
+private extension Configuration.Kind {
+    func toKind() -> ExploreKind {
+        switch self {
+        case .image: .image
+        case .color: .color
+        }
     }
 }

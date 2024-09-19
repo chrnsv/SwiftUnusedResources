@@ -25,13 +25,25 @@ class XibParser {
         }
         
         return resources
-            .compactMap { $0.resource as? Image }
-            .map { .string($0.name) }
+            .compactMap { $0.resource.toExploreUsage() }
     }
 }
 
 private extension XibParser {
     enum XibParserError: Error {
         case wrongExtension
+    }
+}
+
+private extension ResourceProtocol {
+    func toExploreUsage() -> ExploreUsage? {
+        if let image = self as? Image {
+            return .string(image.name, .image)
+        }
+        else if let color = self as? NamedColor {
+            return .string(color.name, .color)
+        }
+        
+        return nil
     }
 }

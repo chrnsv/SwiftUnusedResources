@@ -1,15 +1,20 @@
 import Foundation
 import SwiftSyntax
 
-class ImageLiteralVisitor: SyntaxVisitor {
+class LiteralVisitor: SyntaxVisitor {
     private(set) var usages: [ExploreUsage] = []
+    private let kind: ExploreKind
     
     @discardableResult
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
-        _ node: MacroExpansionExprSyntax
+        _ node: MacroExpansionExprSyntax,
+        kind: ExploreKind
     ) {
+        self.kind = kind
+        
         super.init(viewMode: viewMode)
+        
         walk(node)
     }
     
@@ -18,7 +23,7 @@ class ImageLiteralVisitor: SyntaxVisitor {
             return .skipChildren
         }
         
-        usages.append(.string(StringVisitor(node.expression).parse()))
+        usages.append(.string(StringVisitor(node.expression).parse(), kind))
         
         return .skipChildren
     }

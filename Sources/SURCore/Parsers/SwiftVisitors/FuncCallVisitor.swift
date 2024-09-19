@@ -2,6 +2,7 @@ import Foundation
 import SwiftSyntax
 
 class FuncCallVisitor: SyntaxVisitor {
+    private let kind: ExploreKind
     private let showWarnings: Bool
     
     private var name: String?
@@ -13,10 +14,12 @@ class FuncCallVisitor: SyntaxVisitor {
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         _ url: URL,
         _ node: FunctionCallExprSyntax,
+        kind: ExploreKind,
         uiKit: Bool,
         swiftUI: Bool,
         showWarnings: Bool
     ) {
+        self.kind = kind
         self.showWarnings = showWarnings
         
         super.init(viewMode: viewMode)
@@ -27,7 +30,7 @@ class FuncCallVisitor: SyntaxVisitor {
             return
         }
 
-        if name == "UIImage" {
+        if name == kind.uiClassName {
             if !uiKit && !swiftUI {
                 warn(url: url, node: node, "UIImage used but UIKit not imported")
                 return
@@ -43,7 +46,7 @@ class FuncCallVisitor: SyntaxVisitor {
                 }
                 
                 if let comment = findComment(tuple) {
-                    usages.append(.regexp(comment))
+                    usages.append(.regexp(comment, kind))
                     return
                 }
                 
@@ -57,10 +60,10 @@ class FuncCallVisitor: SyntaxVisitor {
                     warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
                 }
                 
-                usages.append(.regexp(regex))
+                usages.append(.regexp(regex, kind))
             }
         }
-        else if name == "Image" && swiftUI {
+        else if name == kind.swiftUIClassName && swiftUI {
             if node.arguments.count != 1 {
                 return
             }
@@ -74,7 +77,7 @@ class FuncCallVisitor: SyntaxVisitor {
             }
             
             if let comment = findComment(tuple) {
-                usages.append(.regexp(comment))
+                usages.append(.regexp(comment, kind))
                 return
             }
             
@@ -89,7 +92,7 @@ class FuncCallVisitor: SyntaxVisitor {
                 warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
             }
             
-            usages.append(.regexp(regex))
+            usages.append(.regexp(regex, kind))
         }
     }
 
@@ -160,5 +163,21 @@ class FuncCallVisitor: SyntaxVisitor {
     
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
         return .skipChildren
+    }
+}
+
+private extension ExploreKind {
+    var uiClassName: String {
+        switch self {
+        case .image: "UIImage"
+        case .color: "UIColor"
+        }
+    }
+    
+    var swiftUIClassName: String {
+        switch self {
+        case .image: "Image"
+        case .color: "Color"
+        }
     }
 }
