@@ -11,3 +11,19 @@ enum ExploreKind: String, CaseIterable {
     case image
     case color
 }
+
+extension ExploreKind {
+    var uiClassName: String {
+        switch self {
+        case .image: "UIImage"
+        case .color: "UIColor"
+        }
+    }
+    
+    var swiftUIClassName: String {
+        switch self {
+        case .image: "Image"
+        case .color: "Color"
+        }
+    }
+}

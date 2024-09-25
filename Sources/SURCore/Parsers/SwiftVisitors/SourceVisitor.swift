@@ -40,19 +40,6 @@ class SourceVisitor: SyntaxVisitor {
         return .skipChildren
     }
     
-    override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-        let newUsages = kinds
-            .compactMap { findR(in: node, with: $0) }
-        
-        guard !newUsages.isEmpty else {
-            return .visitChildren
-        }
-        
-        usages.append(contentsOf: newUsages)
-        
-        return .skipChildren
-    }
-    
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         let newUsages = kinds
             .map { FuncCallVisitor(url, node, kind: $0, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings) }
@@ -74,22 +61,93 @@ class SourceVisitor: SyntaxVisitor {
         return .skipChildren
     }
     
+    override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
+        let newUsages = kinds
+            .compactMap {
+                findR(in: node, with: $0)
+                ?? findGeneratedAssetExtension(in: node, with: $0)
+            }
+        
+        guard !newUsages.isEmpty else {
+            return .visitChildren
+        }
+        
+        usages.append(contentsOf: newUsages)
+        
+        return .skipChildren
+    }
+    
     private func findR(
-        in node: MemberAccessExprSyntax,
+        in node: DeclReferenceExprSyntax,
         with kind: ExploreKind
     ) -> ExploreUsage? {
-        guard
-            let possibleKind = node.base?.as(MemberAccessExprSyntax.self),
-            possibleKind.declName.baseName.text == kind.rawValue,
-            let possibleR = possibleKind.base?.as(DeclReferenceExprSyntax.self),
-            possibleR.baseName.text == "R"
-        else {
+        guard node.baseName.text == "R" else {
             return nil
         }
         
-        let name = node.declName.baseName.text
+        guard let parent = node.parent?.as(MemberAccessExprSyntax.self) else {
+            return nil
+        }
+        
+        let usage = sequence(first: parent) { $0.parent?.as(MemberAccessExprSyntax.self) }
+            .array()
+            .last
+        
+        guard let usage else {
+            return nil
+        }
+        
+        let visitor = MemberVisitor(viewMode: viewMode)
+        
+        visitor.walk(usage)
+        
+        let members = visitor.members.dropFirst()
+        
+        guard members.first == kind.rawValue, let name = members.dropFirst().first else {
+            return nil
+        }
         
         return .rswift(name, kind)
+    }
+    
+    private func findGeneratedAssetExtension(
+        in node: DeclReferenceExprSyntax,
+        with kind: ExploreKind
+    ) -> ExploreUsage? {
+        guard [kind.uiClassName, kind.swiftUIClassName].contains(node.baseName.text) else {
+            return nil
+        }
+        
+        if let parent = node.parent?.as(MemberAccessExprSyntax.self) {
+            let usage = sequence(first: parent) { $0.parent?.as(MemberAccessExprSyntax.self) }
+                .array()
+                .last
+            
+            guard let usage else {
+                return nil
+            }
+            
+            let visitor = MemberVisitor(viewMode: viewMode)
+            
+            visitor.walk(usage)
+            
+            let members = visitor.members
+            
+            guard members.count == 2, let name = members.last else {
+                return nil
+            }
+            
+            return .generated(name, kind)
+        }
+        else if let parent = node.parent?.as(FunctionCallExprSyntax.self) {
+            guard parent.arguments.count == 1, let member = parent.arguments.last?.expression.as(MemberAccessExprSyntax.self) else {
+                return nil
+            }
+            
+            return .generated(member.declName.baseName.text, kind)
+        }
+        
+        return nil
     }
 }
 
@@ -99,6 +157,18 @@ private extension ExploreKind {
         case "imageLiteral": self = .image
         case "colorLiteral": self = .color
         default: return nil
+        }
+    }
+}
+
+private extension SourceVisitor {
+    final class MemberVisitor: SyntaxVisitor {
+        private(set) var members: [String] = []
+        
+        override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
+            members.append(node.baseName.text)
+            
+            return super.visit(node)
         }
     }
 }

@@ -87,6 +87,13 @@ public final class Explorer {
                     if rswift.description == identifier {
                         usageCount += 1
                     }
+                    
+                case .generated(let identifier, _):
+                    let name = SwiftIdentifier(name: resource.name).description.withoutImageAndColor()
+                    
+                    if name == identifier {
+                        usageCount += 1
+                    }
                 }
             }
             
@@ -298,6 +305,7 @@ private extension ExploreUsage {
         case .string(_, let kind): kind
         case .regexp(_, let kind): kind
         case .rswift(_, let kind): kind
+        case .generated(_, let kind): kind
         }
     }
 }
@@ -308,5 +316,16 @@ private extension Configuration.Kind {
         case .image: .image
         case .color: .color
         }
+    }
+}
+
+private extension String {
+    func withoutImageAndColor() -> String {
+        let input = self
+        let pattern = "(?i)(image|color)+$"
+        let regex = try? NSRegularExpression(pattern: pattern, options: [])
+        let range = NSRange(location: 0, length: input.utf16.count)
+        let modifiedString = regex?.stringByReplacingMatches(in: input, options: [], range: range, withTemplate: "")
+        return modifiedString ?? input
     }
 }
