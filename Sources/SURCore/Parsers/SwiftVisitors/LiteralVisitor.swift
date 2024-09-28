@@ -1,7 +1,7 @@
 import Foundation
 import SwiftSyntax
 
-class LiteralVisitor: SyntaxVisitor {
+final class LiteralVisitor: SyntaxVisitor {
     private(set) var usages: [ExploreUsage] = []
     private let kind: ExploreKind
     

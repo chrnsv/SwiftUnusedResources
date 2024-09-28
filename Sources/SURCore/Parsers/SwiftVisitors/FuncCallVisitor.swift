@@ -1,7 +1,7 @@
 import Foundation
 import SwiftSyntax
 
-class FuncCallVisitor: SyntaxVisitor {
+final class FuncCallVisitor: SyntaxVisitor {
     private let kind: ExploreKind
     private let showWarnings: Bool
     
@@ -163,21 +163,5 @@ class FuncCallVisitor: SyntaxVisitor {
     
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
         return .skipChildren
-    }
-}
-
-private extension ExploreKind {
-    var uiClassName: String {
-        switch self {
-        case .image: "UIImage"
-        case .color: "UIColor"
-        }
-    }
-    
-    var swiftUIClassName: String {
-        switch self {
-        case .image: "Image"
-        case .color: "Color"
-        }
     }
 }
