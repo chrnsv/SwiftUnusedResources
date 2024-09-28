@@ -1,7 +1,7 @@
 import Foundation
 import SwiftSyntax
 
-class FuncCallVisitor: SyntaxVisitor {
+final class FuncCallVisitor: SyntaxVisitor {
     private let kind: ExploreKind
     private let showWarnings: Bool
     

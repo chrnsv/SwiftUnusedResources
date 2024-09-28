@@ -1,7 +1,7 @@
 import Foundation
 import SwiftSyntax
 
-class SourceVisitor: SyntaxVisitor {
+final class SourceVisitor: SyntaxVisitor {
     private let url: URL
     private let showWarnings: Bool
     private let kinds: Set<ExploreKind>
@@ -25,18 +25,18 @@ class SourceVisitor: SyntaxVisitor {
         super.init(viewMode: viewMode)
         walk(node)
     }
-
+    
     override func visit(_ node: ImportDeclSyntax) -> SyntaxVisitorContinueKind {
         // TODO: get import name without .description
         let imp = node.path.description
-
+        
         if imp == "UIKit" || imp == "WatchKit" {
             hasUIKit = true
         }
         else if imp == "SwiftUI" {
             hasSwiftUI = true
         }
-
+        
         return .skipChildren
     }
     
@@ -46,7 +46,7 @@ class SourceVisitor: SyntaxVisitor {
             .flatMap { $0.usages }
         
         usages.append(contentsOf: newUsages)
-
+        
         return super.visit(node)
     }
     
@@ -57,16 +57,13 @@ class SourceVisitor: SyntaxVisitor {
         
         let visitor = LiteralVisitor(node, kind: kind)
         usages.append(contentsOf: visitor.usages)
-
+        
         return .skipChildren
     }
     
     override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
         let newUsages = kinds
-            .compactMap {
-                findR(in: node, with: $0)
-                ?? findGeneratedAssetExtension(in: node, with: $0)
-            }
+            .compactMap { findR(in: node, with: $0) ?? findGeneratedAsset(in: node, with: $0) }
         
         guard !newUsages.isEmpty else {
             return .visitChildren
@@ -76,7 +73,9 @@ class SourceVisitor: SyntaxVisitor {
         
         return .skipChildren
     }
-    
+}
+
+extension SourceVisitor {
     private func findR(
         in node: DeclReferenceExprSyntax,
         with kind: ExploreKind
@@ -85,23 +84,7 @@ class SourceVisitor: SyntaxVisitor {
             return nil
         }
         
-        guard let parent = node.parent?.as(MemberAccessExprSyntax.self) else {
-            return nil
-        }
-        
-        let usage = sequence(first: parent) { $0.parent?.as(MemberAccessExprSyntax.self) }
-            .array()
-            .last
-        
-        guard let usage else {
-            return nil
-        }
-        
-        let visitor = MemberVisitor(viewMode: viewMode)
-        
-        visitor.walk(usage)
-        
-        let members = visitor.members.dropFirst()
+        let members = members(in: node).dropFirst()
         
         guard members.first == kind.rawValue, let name = members.dropFirst().first else {
             return nil
@@ -110,7 +93,7 @@ class SourceVisitor: SyntaxVisitor {
         return .rswift(name, kind)
     }
     
-    private func findGeneratedAssetExtension(
+    private func findGeneratedAsset(
         in node: DeclReferenceExprSyntax,
         with kind: ExploreKind
     ) -> ExploreUsage? {
@@ -118,20 +101,15 @@ class SourceVisitor: SyntaxVisitor {
             return nil
         }
         
-        if let parent = node.parent?.as(MemberAccessExprSyntax.self) {
-            let usage = sequence(first: parent) { $0.parent?.as(MemberAccessExprSyntax.self) }
-                .array()
-                .last
-            
-            guard let usage else {
+        if let parent = node.parent?.as(FunctionCallExprSyntax.self) {
+            guard parent.arguments.count == 1, let member = parent.arguments.last?.expression.as(MemberAccessExprSyntax.self) else {
                 return nil
             }
             
-            let visitor = MemberVisitor(viewMode: viewMode)
-            
-            visitor.walk(usage)
-            
-            let members = visitor.members
+            return .generated(member.declName.baseName.text, kind)
+        }
+        else {
+            let members = members(in: node)
             
             guard members.count == 2, let name = members.last else {
                 return nil
@@ -139,15 +117,26 @@ class SourceVisitor: SyntaxVisitor {
             
             return .generated(name, kind)
         }
-        else if let parent = node.parent?.as(FunctionCallExprSyntax.self) {
-            guard parent.arguments.count == 1, let member = parent.arguments.last?.expression.as(MemberAccessExprSyntax.self) else {
-                return nil
-            }
-            
-            return .generated(member.declName.baseName.text, kind)
+    }
+    
+    private func members(in node: DeclReferenceExprSyntax) -> some RandomAccessCollection<String> {
+        guard let parent = node.parent?.as(MemberAccessExprSyntax.self) else {
+            return []
         }
         
-        return nil
+        let usage = sequence(first: parent) { $0.parent?.as(MemberAccessExprSyntax.self) }
+            .array()
+            .last
+        
+        guard let usage else {
+            return []
+        }
+        
+        let visitor = MemberVisitor(viewMode: viewMode)
+        
+        visitor.walk(usage)
+        
+        return visitor.members
     }
 }
 
