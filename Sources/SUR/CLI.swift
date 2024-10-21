@@ -6,7 +6,7 @@ import SURCore
 
 @main
 struct CLI: AsyncParsableCommand {
-    @Option(name: .shortAndLong, help: "Root path of your Xcode project. Default is current.")
+    @Option(name: .shortAndLong, help: "Root path of your Xcode project. Default is current.", transform: { Path($0) })
     var project: Path?
     
     @Option(name: .shortAndLong, help: "Project's target. Skip to process all targets.")
@@ -80,11 +80,5 @@ struct RuntimeError: Error, CustomStringConvertible {
     
     init(_ description: String) {
         self.description = description.red.bold
-    }
-}
-
-extension Path: ExpressibleByArgument {
-    public init?(argument: String) {
-        self.init(argument)
     }
 }

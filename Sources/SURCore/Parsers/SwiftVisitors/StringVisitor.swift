@@ -1,11 +1,12 @@
 import Foundation
 import SwiftSyntax
 
-class StringVisitor: SyntaxVisitor {
+final class StringVisitor: SyntaxVisitor {
     var value: String = ""
 
     init(viewMode: SyntaxTreeViewMode = .sourceAccurate, _ node: SyntaxProtocol) {
         super.init(viewMode: viewMode)
+        
         node.children(viewMode: viewMode).forEach { syntax in
             walk(syntax)
         }

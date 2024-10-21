@@ -8,14 +8,15 @@
 import Foundation
 import PathKit
 
-struct ExploreResource {
+struct ExploreResource: Sendable {
     let name: String
     let type: ResourceType
-    let path: Path
+    let kind: ExploreKind
+    let path: String
     var usedCount: Int = 0
     
-    enum ResourceType {
+    enum ResourceType: Sendable {
         case asset(assets: String)
-        case image
+        case file
     }
 }
