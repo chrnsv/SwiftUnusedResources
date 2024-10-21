@@ -1,4 +1,4 @@
-// swift-tools-version:5.7
+// swift-tools-version:6.0
 
 import PackageDescription
 
@@ -62,6 +62,5 @@ let package = Package(
             url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/v0.0.7/sur-v0.0.7.artifactbundle.zip",
             checksum: "4e0fae7859f92d4ea798182c56b2955ac24cdb383747c8ba4dd13b0bff8c9644"
         ),
-    ],
-    swiftLanguageVersions: [.v5]
+    ]
 )

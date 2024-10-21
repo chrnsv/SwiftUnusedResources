@@ -2,7 +2,7 @@ import Foundation
 import IBDecodable
 import PathKit
 
-class XibParser {
+struct XibParser: Sendable {
     func parse(
         _ path: Path
     ) throws -> [ExploreUsage] {

@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum ExploreKind: String, CaseIterable {
+enum ExploreKind: String, CaseIterable, Sendable {
     case image
     case color
 }
