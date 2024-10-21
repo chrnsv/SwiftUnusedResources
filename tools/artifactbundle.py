@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 
 def create_artifact_bundle(sur_executable_path, version):
     # Define paths
-    bundle_name = f"sur-v{version}.artifactbundle"
+    bundle_name = f"sur-{version}.artifactbundle"
     bundle_dir = f"{bundle_name}_bundle"
     sur_dest_path = os.path.join(bundle_dir, "bin", "sur")
     

@@ -24,14 +24,14 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "SUR",
-             dependencies: [
+            dependencies: [
                 "PathKit",
                 "Rainbow",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .target(name: "SURCore"),
-             ],
+            ],
             plugins: [
-                .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
+                 .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
             ]
         ),
         .plugin(
@@ -52,15 +52,15 @@ let package = Package(
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "Yams", package: "Yams"),
-             ],
+            ],
             plugins: [
-                .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
+                 .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
             ]
         ),
         .binaryTarget(
             name: "SURBinary",
-            url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/v0.0.7/sur-v0.0.7.artifactbundle.zip",
-            checksum: "4e0fae7859f92d4ea798182c56b2955ac24cdb383747c8ba4dd13b0bff8c9644"
+            url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/0.0.8/sur-0.0.8.artifactbundle.zip",
+            checksum: "3ba6253c551908cc1cd0f50a4bc0161029e2ff4aec287c1b786438881c24dc0a"
         ),
     ]
 )
