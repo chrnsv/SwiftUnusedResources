@@ -102,8 +102,8 @@ public final class Explorer {
                 case .asset(let assets):
                     if showWarnings {
                         var name = resource.name
-                        if resource.path.string.starts(with: assets) {
-                            name = NSString(string: String(resource.path.string.dropFirst(assets.count + 1))).deletingPathExtension
+                        if resource.path.starts(with: assets) {
+                            name = NSString(string: String(resource.path.dropFirst(assets.count + 1))).deletingPathExtension
                         }
                         
                         print("\(assets): warning: '\(name)' never used")
@@ -125,12 +125,12 @@ public final class Explorer {
                 print("    \(unused.count) unused images found".yellow.bold)
                 var totalSize = 0
                 unused.forEach { resource in
-                    var name = resource.path.string
+                    var name = resource.path
                     if name.starts(with: sourceRoot.string) {
-                        name = String(resource.path.string.dropFirst(sourceRoot.string.count + 1))
+                        name = String(resource.path.dropFirst(sourceRoot.string.count + 1))
                     }
                     
-                    let size = resource.path.size
+                    let size = Path(resource.path).size
                     print("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
                     totalSize += size
                 }
@@ -226,7 +226,7 @@ public final class Explorer {
                     name: $0.lastComponentWithoutExtension,
                     type: .asset(assets: path.string),
                     kind: kind,
-                    path: $0.absolute()
+                    path: $0.absolute().string
                 )
             }
         
@@ -238,7 +238,7 @@ public final class Explorer {
             name: path.lastComponentWithoutExtension,
             type: .file,
             kind: .image,
-            path: path
+            path: path.string
         )
         
         await storage.addResource(resource)
@@ -265,8 +265,10 @@ public final class Explorer {
                     return
                 }
                 
-                group.addTask {
-                    try parser.parse(fullPath)
+                let url = fullPath.url
+                
+                group.addTask { @Sendable in
+                    try parser.parse(url)
                 }
             }
             

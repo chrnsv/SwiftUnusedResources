@@ -1,9 +1,8 @@
 import Foundation
-import PathKit
 import SwiftParser
 import SwiftSyntax
 
-class SwiftParser {
+struct SwiftParser: Sendable {
     private let showWarnings: Bool
     private let kinds: Set<ExploreKind>
     
@@ -13,11 +12,11 @@ class SwiftParser {
     }
     
     func parse(
-        _ path: Path
+        _ path: URL
     ) throws -> [ExploreUsage] {
-        let file = try String(contentsOf: path.url)
+        let file = try String(contentsOf: path)
         let source = Parser.parse(source: file)
-        let visitor = SourceVisitor(showWarnings: showWarnings, kinds: kinds, path.url, source)
+        let visitor = SourceVisitor(showWarnings: showWarnings, kinds: kinds, path, source)
         
         return visitor.usages
     }

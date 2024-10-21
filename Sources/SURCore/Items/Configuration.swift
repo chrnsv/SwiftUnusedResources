@@ -7,17 +7,17 @@
 
 import Foundation
 
-struct Configuration: Codable {
+struct Configuration: Codable, Sendable {
     let exclude: Exclude?
     let kinds: [Kind]?
     
-    struct Exclude: Codable {
+    struct Exclude: Codable, Sendable {
         let sources: [String]?
         let resources: [String]?
         let assets: [String]?
     }
     
-    enum Kind: String, Codable {
+    enum Kind: String, Codable, Sendable {
         case image
         case color
     }
