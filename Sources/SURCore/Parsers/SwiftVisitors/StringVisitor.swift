@@ -32,7 +32,10 @@ final class StringVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
-        value += ".*"
+        if node.parent?.is(MemberAccessExprSyntax.self) != true {
+            value += ".*"
+        }
+        
         return .skipChildren
     }
     
