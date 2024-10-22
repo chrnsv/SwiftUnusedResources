@@ -72,8 +72,8 @@ defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -b
 
 ## How it works
 
-`sur` finds images included in the target, and then detects if they are used by the xibs, storyboards, and swift files.
-`sur` will search for `UIImage(named: <image>)` (in UIKit and WatchKit files), `Image(<image>)` (in SwiftUI files), `#imageLiteral(<image>)`, `R.image.<image>()`, and will try to guess best pattern to match images even with partial names.
+`sur` finds images and colors included in the target, and then detects if they are used by the xibs, storyboards, and swift files.
+`sur` will search for `UIImage(named: <image>)` (in UIKit and WatchKit files), `Image(<image>)` (in SwiftUI files), `#imageLiteral(<image>)`, `R.image.<image>()`, and will try to guess best pattern to match images even with partial names. It also supports generated assets such as `Image(.<image>)` and `Image.<image>` but currently does not support the `.<image>` declaration.
 
 ```swift
 // Any part of the name that sur couldn't guess will be replaced with `*`.
@@ -103,4 +103,18 @@ Image("frame\(count)")
 
 // image: (apple|banana|whiskey)
 Image(image)
+```
+
+## Configuration
+
+You can place `sur.yml` to the root of your project to configure your rules. Example configuration:
+
+```yaml
+exclude:
+  sources:
+    - <path to the source file>
+  resources:
+    - <name of resource>
+  assets:
+    - <name of xcassets>
 ```
