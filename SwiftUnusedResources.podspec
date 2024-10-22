@@ -2,7 +2,7 @@ Pod::Spec.new do |spec|
   spec.name                         = 'SwiftUnusedResources'
   spec.summary                      = 'SwiftUnusedResources'
   spec.homepage                     = 'https://github.com/mugabe/SwiftUnusedResources'
-  spec.version                      = '0.0.8'
+  spec.version                      = '0.0.9'
   spec.license                      = 'MIT'
   spec.authors                      = { 'mugabe' => 'kk@wachanga.com' }
   spec.preserve_paths               = 'sur', 'lib_InternalSwiftSyntaxParser.dylib'

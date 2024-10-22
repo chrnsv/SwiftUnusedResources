@@ -32,7 +32,7 @@ final class FuncCallVisitor: SyntaxVisitor {
 
         if name == kind.uiClassName {
             if !uiKit && !swiftUI {
-                warn(url: url, node: node, "UIImage used but UIKit not imported")
+                warn(url: url, node: node, "\(kind.uiClassName) used but UIKit not imported")
                 return
             }
 
