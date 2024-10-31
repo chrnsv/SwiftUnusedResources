@@ -110,7 +110,7 @@ final class FuncCallVisitor: SyntaxVisitor {
     
     private func matchComment(text: String) -> String? {
         guard
-            let regex = try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/|\\*+)?\\s*image:\\s*(.*?)\\s*$"),
+            let regex = try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/|\\*+)?\\s*\(kind.regex):\\s*(.*?)\\s*$"),
             let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
             let range = Range(match.range(at: 1), in: text)
         else {
@@ -163,5 +163,14 @@ final class FuncCallVisitor: SyntaxVisitor {
     
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
         return .skipChildren
+    }
+}
+
+private extension ExploreKind {
+    var regex: String {
+        switch self {
+        case .color: "color"
+        case .image: "image"
+        }
     }
 }
