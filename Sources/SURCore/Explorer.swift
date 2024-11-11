@@ -156,7 +156,36 @@ public final class Explorer {
             try await explore(sources: sources)
         }
         
+        if let synchronizedGroups = target.fileSystemSynchronizedGroups {
+            try await explore(groups: synchronizedGroups)
+        }
+        
         try await analyze()
+    }
+    
+    private func explore(groups: [PBXFileSystemSynchronizedRootGroup]) async throws {
+        for group in groups {
+            guard let path = try group.fullPath(sourceRoot: sourceRoot) else {
+                continue
+            }
+            
+            let extensions = ["png", "jpg", "pdf", "gif", "svg", "xcassets", "xib", "storyboard"]
+            
+            for ext in extensions {
+                for resource in Glob(pattern: path.string + "**/*.\(ext)") {
+                    if ext != "xcassets" && resource.contains("xcassets") {
+                        continue
+                    }
+                    
+                    try await explore(resource: Path(resource))
+                }
+            }
+            
+            let sources = Glob(pattern: path.string + "**/*.swift")
+                .map { Path($0) }
+            
+            try await explore(files: sources)
+        }
     }
     
     private func explore(resource: PBXFileElement) async throws {
@@ -164,17 +193,21 @@ public final class Explorer {
             throw ExploreError.notFound(message: "Could not get full path for resource \(resource) (uuid: \(resource.uuid))")
         }
         
-        let ext = fullPath.extension
+        try await explore(resource: fullPath)
+    }
+    
+    private func explore(resource path: Path) async throws {
+        let ext = path.extension
         
         switch ext {
         case "png", "jpg", "pdf", "gif", "svg":
-            try await explore(image: resource, path: fullPath)
+            try await explore(image: path)
             
         case "xcassets":
-            try await explore(xcassets: resource, path: fullPath)
+            try await explore(xcassets: path)
             
         case "xib", "storyboard":
-            try await explore(xib: resource, path: fullPath)
+            try await explore(xib: path)
             
         default:
             break
@@ -195,7 +228,13 @@ public final class Explorer {
         }
     }
     
-    private func explore(xib: PBXFileElement, path: Path) async throws {
+    private func explore(resources: some Sequence<Path>) async throws {
+        for resource in resources {
+            try await explore(resource: resource)
+        }
+    }
+    
+    private func explore(xib path: Path) async throws {
         let parser = XibParser()
         
         let usages = try? parser.parse(path)
@@ -207,14 +246,14 @@ public final class Explorer {
         await storage.addUsages(usages)
     }
     
-    private func explore(xcassets: PBXFileElement, path: Path) async throws {
+    private func explore(xcassets path: Path) async throws {
         let resources = kinds
-            .flatMap { explore(xcassets: xcassets, path: path, kind: $0) }
+            .flatMap { explore(xcassets: path, kind: $0) }
         
         await storage.addResources(resources)
     }
     
-    private func explore(xcassets: PBXFileElement, path: Path, kind: ExploreKind) -> [ExploreResource] {
+    private func explore(xcassets path: Path, kind: ExploreKind) -> [ExploreResource] {
         guard !excludedAssets.contains(path.lastComponentWithoutExtension) else {
             return []
         }
@@ -233,7 +272,7 @@ public final class Explorer {
         return resources
     }
     
-    private func explore(image: PBXFileElement, path: Path) async throws {
+    private func explore(image path: Path) async throws {
         let resource = ExploreResource(
             name: path.lastComponentWithoutExtension,
             type: .file,
@@ -249,23 +288,25 @@ public final class Explorer {
             throw ExploreError.notFound(message: "Source files not found")
         }
         
+        let paths = try files.compactMap { try $0.file?.fullPath(sourceRoot: sourceRoot) }
+        
+        try await explore(files: paths)
+    }
+    
+    private func explore(files: some Sequence<Path>) async throws {
         let parser = SwiftParser(showWarnings: showWarnings, kinds: kinds)
         
         let usages = try await withThrowingTaskGroup(of: [ExploreUsage].self) { group in
-            try files.forEach { file in
-                guard let fullPath = try file.file?.fullPath(sourceRoot: sourceRoot) else {
+            files.forEach { path in
+                if path.extension != "swift" {
                     return
                 }
                 
-                if fullPath.extension != "swift" {
+                if excludedSources.contains(path) {
                     return
                 }
                 
-                if excludedSources.contains(fullPath) {
-                    return
-                }
-                
-                let url = fullPath.url
+                let url = path.url
                 
                 group.addTask { @Sendable in
                     try parser.parse(url)
