@@ -59,8 +59,8 @@ let package = Package(
         ),
         .binaryTarget(
             name: "SURBinary",
-            url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/0.0.9/sur-0.0.9.artifactbundle.zip",
-            checksum: "bab77e669168544503c47f2f00b249204394f5ca30b88b94583c40ebb075e7e5"
+            url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/0.0.10/sur-0.0.10.artifactbundle.zip",
+            checksum: "bd0b845e9c12e9a2e9fbdd3c686c8f1334013758d93182470c2d755e4d7d975d"
         ),
     ]
 )
