@@ -103,7 +103,7 @@ public final class Explorer {
                     if showWarnings {
                         var name = resource.name
                         if resource.path.starts(with: assets) {
-                            name = NSString(string: String(resource.path.dropFirst(assets.count + 1))).deletingPathExtension
+                            name = NSString(string: String(resource.path.dropFirst(assets.count))).deletingPathExtension
                         }
                         
                         print("\(assets): warning: '\(name)' never used")
