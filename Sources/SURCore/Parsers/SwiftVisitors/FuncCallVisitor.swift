@@ -1,7 +1,7 @@
 import Foundation
 import SwiftSyntax
 
-class FuncCallVisitor: SyntaxVisitor {
+final class FuncCallVisitor: SyntaxVisitor {
     private let kind: ExploreKind.Asset
     private let showWarnings: Bool
     
@@ -32,7 +32,7 @@ class FuncCallVisitor: SyntaxVisitor {
 
         if name == kind.uiClassName {
             if !uiKit && !swiftUI {
-                warn(url: url, node: node, "UIImage used but UIKit not imported")
+                warn(url: url, node: node, "\(kind.uiClassName) used but UIKit not imported")
                 return
             }
 
@@ -110,7 +110,7 @@ class FuncCallVisitor: SyntaxVisitor {
     
     private func matchComment(text: String) -> String? {
         guard
-            let regex = try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/|\\*+)?\\s*image:\\s*(.*?)\\s*$"),
+            let regex = try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/|\\*+)?\\s*\(kind.regex):\\s*(.*?)\\s*$"),
             let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
             let range = Range(match.range(at: 1), in: text)
         else {
@@ -167,17 +167,10 @@ class FuncCallVisitor: SyntaxVisitor {
 }
 
 private extension ExploreKind.Asset {
-    var uiClassName: String {
+    var regex: String {
         switch self {
-        case .image: "UIImage"
-        case .color: "UIColor"
-        }
-    }
-    
-    var swiftUIClassName: String {
-        switch self {
-        case .image: "Image"
-        case .color: "Color"
+        case .color: "color"
+        case .image: "image"
         }
     }
 }

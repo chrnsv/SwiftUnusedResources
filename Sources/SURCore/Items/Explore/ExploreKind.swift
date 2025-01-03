@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum ExploreKind: Equatable {
+enum ExploreKind: Equatable, Hashable {
     case asset(Asset)
     case string
     
@@ -30,5 +30,21 @@ extension ExploreKind: CaseIterable {
     enum Asset: String, CaseIterable {
         case image
         case color
+    }
+}
+
+extension ExploreKind.Asset {
+    var uiClassName: String {
+        switch self {
+        case .image: "UIImage"
+        case .color: "UIColor"
+        }
+    }
+    
+    var swiftUIClassName: String {
+        switch self {
+        case .image: "Image"
+        case .color: "Color"
+        }
     }
 }

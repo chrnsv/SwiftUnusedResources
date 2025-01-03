@@ -15,7 +15,7 @@ struct SURBuildToolPlugin: BuildToolPlugin {
     }
     
     private func makeCommand(executable: PluginContext.Tool) -> [Command] {
-        let command: Command = .buildCommand(displayName: "SwiftUnusedResources", executable: executable.path, arguments: [])
+        let command: Command = .buildCommand(displayName: "SwiftUnusedResources", executable: executable.url, arguments: [])
         
         return [command]
     }

@@ -6,16 +6,15 @@
 //
 
 import Foundation
-import PathKit
 
-struct ExploreResource {
+struct ExploreResource: Sendable {
     let name: String
     let type: ResourceType
     let kind: ExploreKind
-    let pathes: [Path]
+    let pathes: [String]
     var usedCount: Int = 0
     
-    enum ResourceType {
+    enum ResourceType: Sendable {
         case asset(assets: String)
         case file
     }
