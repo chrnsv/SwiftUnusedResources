@@ -109,7 +109,7 @@ public final class Explorer {
                         
                         for path in resource.pathes {
                             if path.starts(with: assets) {
-                                name = NSString(string: String(path.dropFirst(assets.count + 1))).deletingPathExtension
+                                name = NSString(string: String(path.dropFirst(assets.count))).deletingPathExtension
                             }
                             
                             print("\(assets): warning: '\(name)' never used")
