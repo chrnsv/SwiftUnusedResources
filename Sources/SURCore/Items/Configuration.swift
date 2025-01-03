@@ -20,5 +20,6 @@ struct Configuration: Codable, Sendable {
     enum Kind: String, Codable, Sendable {
         case image
         case color
+        case localization
     }
 }

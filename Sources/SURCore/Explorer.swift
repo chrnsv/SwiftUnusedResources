@@ -197,6 +197,8 @@ public final class Explorer {
                 }
             }
             
+            try await explore(strings: path)
+            
             let sources = Glob(pattern: path.string + "**/*.swift")
                 .map { Path($0) }
             
@@ -230,7 +232,7 @@ public final class Explorer {
         }
     }
     
-    private func explore(path: Path) async throws {
+    private func explore(strings path: Path) async throws {
         print(path)
         let files = Glob(pattern: path.string + "**/*.strings")
             .map { Path($0) }
@@ -274,7 +276,7 @@ public final class Explorer {
                 try await explore(resource: file)
                 
             case .group(let group):
-                try await explore(path: group)
+                try await explore(strings: group)
             }
         }
     }
