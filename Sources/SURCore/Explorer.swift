@@ -42,6 +42,7 @@ public final class Explorer {
     }
     
     public func explore() async throws {
+        let start = Date()
         print("🔨 Loading project \(projectPath.lastComponent)".bold)
         let xcodeproj = try XcodeProj(path: projectPath)
         
@@ -53,6 +54,9 @@ public final class Explorer {
         }
         
         print("🦒 Complete".bold)
+        let duration = Date().timeIntervalSince(start)
+        
+        print("Duration: \(duration)")
     }
     
     // swiftlint:disable:next cyclomatic_complexity function_body_length
@@ -84,12 +88,12 @@ public final class Explorer {
                     
                 case .rswift(let identifier, _):
                     let rswift = SwiftIdentifier(name: resource.name)
-                    if rswift.description == identifier {
+                    if rswift.value.trimmingCharacters(in: CharacterSet(charactersIn: "`")) == identifier {
                         usageCount += 1
                     }
                     
                 case .generated(let identifier, _):
-                    let name = SwiftIdentifier(name: resource.name).description.withoutImageAndColor()
+                    let name = SwiftIdentifier(name: resource.name).value.withoutImageAndColor()
                     
                     if name == identifier {
                         usageCount += 1
@@ -102,17 +106,22 @@ public final class Explorer {
                 case .asset(let assets):
                     if showWarnings {
                         var name = resource.name
-                        if resource.path.starts(with: assets) {
-                            name = NSString(string: String(resource.path.dropFirst(assets.count))).deletingPathExtension
-                        }
                         
-                        print("\(assets): warning: '\(name)' never used")
+                        for path in resource.pathes {
+                            if path.starts(with: assets) {
+                                name = NSString(string: String(path.dropFirst(assets.count))).deletingPathExtension
+                            }
+                            
+                            print("\(assets): warning: '\(name)' never used")
+                        }
                     }
                     await storage.addUnused(resource)
                     
                 case .file:
                     if showWarnings {
-                        print("\(resource.path): warning: '\(resource.name)' never used")
+                        for path in resource.pathes {
+                            print("\(path): warning: '\(resource.name)' never used")
+                        }
                     }
                     await storage.addUnused(resource)
                 }
@@ -125,14 +134,21 @@ public final class Explorer {
                 print("    \(unused.count) unused images found".yellow.bold)
                 var totalSize = 0
                 unused.forEach { resource in
-                    var name = resource.path
-                    if name.starts(with: sourceRoot.string) {
-                        name = String(resource.path.dropFirst(sourceRoot.string.count + 1))
+                    for path in resource.pathes {
+                        var name = switch resource.kind {
+                        case .asset: path
+                        case .string: "\(resource.name), \(path)"
+                        }
+                        
+                        if name.starts(with: sourceRoot.string) {
+                            name = String(path.dropFirst(sourceRoot.string.count + 1))
+                        }
+
+                        let size = Path(path).size
+                        print("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
+                        totalSize += size
                     }
                     
-                    let size = Path(resource.path).size
-                    print("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
-                    totalSize += size
                 }
                 print("    \(totalSize.humanFileSize) total".yellow)
             }
@@ -181,6 +197,8 @@ public final class Explorer {
                 }
             }
             
+            try await explore(strings: path)
+            
             let sources = Glob(pattern: path.string + "**/*.swift")
                 .map { Path($0) }
             
@@ -214,17 +232,52 @@ public final class Explorer {
         }
     }
     
+    private func explore(strings path: Path) async throws {
+        print(path)
+        let files = Glob(pattern: path.string + "**/*.strings")
+            .map { Path($0) }
+        
+        let resources = files
+            .compactMap { path in
+                NSDictionary(contentsOfFile: path.string)
+                    .flatMap { $0 as? [String: String] }
+                    .map { (path, $0.keys) }
+            }
+            .flatMap { path, keys in
+                keys.map { ($0, path) }
+            }
+            .reduce(into: [:]) { result, element in
+                result[element.0, default: []].append(element.1.string)
+            }
+            .map { key, pathes in
+                ExploreResource(
+                    name: key,
+                    type: .file,
+                    kind: .string,
+                    pathes: pathes
+                )
+            }
+        
+        await storage.addResources(resources)
+    }
+    
     private func explore(resources: PBXResourcesBuildPhase) async throws {
         guard let files = resources.files else {
             throw ExploreError.notFound(message: "Resource files not found")
         }
         
-        for file in files {
-            guard let resource = file.file else {
-                continue
+        let resources = files
+            .compactMap { $0.file.flatMap { Resource(element: $0, root: sourceRoot) } }
+            .toSet()
+        
+        for resource in resources {
+            switch resource {
+            case .file(let file):
+                try await explore(resource: file)
+                
+            case .group(let group):
+                try await explore(strings: group)
             }
-            
-            try await explore(resource: resource)
         }
     }
     
@@ -248,12 +301,13 @@ public final class Explorer {
     
     private func explore(xcassets path: Path) async throws {
         let resources = kinds
+            .compactMap { $0.toAsset() }
             .flatMap { explore(xcassets: path, kind: $0) }
         
         await storage.addResources(resources)
     }
     
-    private func explore(xcassets path: Path, kind: ExploreKind) -> [ExploreResource] {
+    private func explore(xcassets path: Path, kind: ExploreKind.Asset) -> [ExploreResource] {
         guard !excludedAssets.contains(path.lastComponentWithoutExtension) else {
             return []
         }
@@ -264,8 +318,8 @@ public final class Explorer {
                 ExploreResource(
                     name: $0.lastComponentWithoutExtension,
                     type: .asset(assets: path.string),
-                    kind: kind,
-                    path: $0.absolute().string
+                    kind: .asset(kind),
+                    pathes: [$0.absolute().string]
                 )
             }
         
@@ -276,8 +330,8 @@ public final class Explorer {
         let resource = ExploreResource(
             name: path.lastComponentWithoutExtension,
             type: .file,
-            kind: .image,
-            path: path.string
+            kind: .asset(.image),
+            pathes: [path.string]
         )
         
         await storage.addResource(resource)
@@ -321,6 +375,28 @@ public final class Explorer {
 }
 
 private extension Explorer {
+    enum Resource: Hashable {
+        case file(PBXFileReference)
+        case group(Path)
+        
+        init?(element: PBXFileElement, root: Path) {
+            switch element {
+            case let file as PBXFileReference:
+                self = .file(file)
+                
+            case let group as PBXVariantGroup:
+                guard let path = try? group.fullPath(sourceRoot: root) else {
+                    return nil
+                }
+                
+                self = .group(path)
+                
+            default:
+                return nil
+            }
+        }
+    }
+    
     enum ExploreError: Error {
         case notFound(message: String)
     }
@@ -333,13 +409,24 @@ private extension Explorer {
     }
 }
 
-private extension ExploreKind {
+private extension ExploreKind.Asset {
     var assets: String {
         switch self {
         case .image: "**/*.imageset"
         case .color: "**/*.colorset"
         }
     }
+}
+
+extension ExploreKind {
+    func toAsset() -> ExploreKind.Asset? {
+        guard case let .asset(asset) = self else {
+            return nil
+        }
+        
+        return asset
+    }
+        
 }
 
 private extension ExploreUsage {
@@ -353,11 +440,16 @@ private extension ExploreUsage {
     }
 }
 
+private extension Sequence where Element: Hashable {
+    func toSet() -> Set<Element> { Set(self) }
+}
+
 private extension Configuration.Kind {
     func toKind() -> ExploreKind {
         switch self {
-        case .image: .image
-        case .color: .color
+        case .image: .asset(.image)
+        case .color: .asset(.color)
+        case .localization: .string
         }
     }
 }

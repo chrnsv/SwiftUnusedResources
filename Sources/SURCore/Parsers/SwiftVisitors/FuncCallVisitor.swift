@@ -2,7 +2,7 @@ import Foundation
 import SwiftSyntax
 
 final class FuncCallVisitor: SyntaxVisitor {
-    private let kind: ExploreKind
+    private let kind: ExploreKind.Asset
     private let showWarnings: Bool
     
     private var name: String?
@@ -14,7 +14,7 @@ final class FuncCallVisitor: SyntaxVisitor {
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         _ url: URL,
         _ node: FunctionCallExprSyntax,
-        kind: ExploreKind,
+        kind: ExploreKind.Asset,
         uiKit: Bool,
         swiftUI: Bool,
         showWarnings: Bool
@@ -46,7 +46,7 @@ final class FuncCallVisitor: SyntaxVisitor {
                 }
                 
                 if let comment = findComment(tuple) {
-                    usages.append(.regexp(comment, kind))
+                    usages.append(.regexp(comment, .asset(kind)))
                     return
                 }
                 
@@ -60,7 +60,7 @@ final class FuncCallVisitor: SyntaxVisitor {
                     warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
                 }
                 
-                usages.append(.regexp(regex, kind))
+                usages.append(.regexp(regex, .asset(kind)))
             }
         }
         else if name == kind.swiftUIClassName && swiftUI {
@@ -77,7 +77,7 @@ final class FuncCallVisitor: SyntaxVisitor {
             }
             
             if let comment = findComment(tuple) {
-                usages.append(.regexp(comment, kind))
+                usages.append(.regexp(comment, .asset(kind)))
                 return
             }
             
@@ -92,7 +92,7 @@ final class FuncCallVisitor: SyntaxVisitor {
                 warn(url: url, node: tuple, "Too wide match \"\(regex)\" is generated for resource, please specify pattern")
             }
             
-            usages.append(.regexp(regex, kind))
+            usages.append(.regexp(regex, .asset(kind)))
         }
     }
 
@@ -166,7 +166,7 @@ final class FuncCallVisitor: SyntaxVisitor {
     }
 }
 
-private extension ExploreKind {
+private extension ExploreKind.Asset {
     var regex: String {
         switch self {
         case .color: "color"

@@ -42,6 +42,7 @@ final class SourceVisitor: SyntaxVisitor {
     
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         let newUsages = kinds
+            .compactMap { $0.toAsset() }
             .map { FuncCallVisitor(url, node, kind: $0, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings) }
             .flatMap { $0.usages }
         
@@ -63,6 +64,7 @@ final class SourceVisitor: SyntaxVisitor {
     
     override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
         let newUsages = kinds
+            .compactMap { $0.toAsset() }
             .compactMap { findR(in: node, with: $0) ?? findGeneratedAsset(in: node, with: $0) }
         
         guard !newUsages.isEmpty else {
@@ -73,12 +75,58 @@ final class SourceVisitor: SyntaxVisitor {
         
         return .skipChildren
     }
+    
+    private func findR(
+        in node: MemberAccessExprSyntax,
+        with kind: ExploreKind
+    ) -> ExploreUsage? {
+        switch kind {
+        case .asset:
+            guard
+                let possibleKind = node.base?.as(MemberAccessExprSyntax.self),
+                possibleKind.declName.baseName.text == kind.rawValue,
+                let possibleR = possibleKind.base?.as(DeclReferenceExprSyntax.self),
+                possibleR.baseName.text == "R"
+            else {
+                return nil
+            }
+            
+            let name = node.declName.baseName.text
+            
+            return .rswift(name, kind)
+            
+        case .string:
+            guard
+                let possibleFileName = node.base?.as(MemberAccessExprSyntax.self),
+                let possibleKind = possibleFileName.base?.as(MemberAccessExprSyntax.self),
+                possibleKind.declName.baseName.text == kind.rawValue,
+                let possibleR = possibleKind.base?.as(DeclReferenceExprSyntax.self),
+                possibleR.baseName.text == "R"
+            else {
+                return nil
+            }
+            
+            let name = node.declName.baseName.text
+            
+            return .rswift(name, kind)
+        }
+    }
+}
+
+private extension ExploreKind {
+    init?(literal: String) {
+        switch literal {
+        case "imageLiteral": self = .asset(.image)
+        case "colorLiteral": self = .asset(.color)
+        default: return nil
+        }
+    }
 }
 
 extension SourceVisitor {
     private func findR(
         in node: DeclReferenceExprSyntax,
-        with kind: ExploreKind
+        with kind: ExploreKind.Asset
     ) -> ExploreUsage? {
         guard node.baseName.text == "R" else {
             return nil
@@ -90,12 +138,12 @@ extension SourceVisitor {
             return nil
         }
         
-        return .rswift(name, kind)
+        return .rswift(name, .asset(kind))
     }
     
     private func findGeneratedAsset(
         in node: DeclReferenceExprSyntax,
-        with kind: ExploreKind
+        with kind: ExploreKind.Asset
     ) -> ExploreUsage? {
         guard [kind.uiClassName, kind.swiftUIClassName].contains(node.baseName.text) else {
             return nil
@@ -106,7 +154,7 @@ extension SourceVisitor {
                 return nil
             }
             
-            return .generated(member.declName.baseName.text, kind)
+            return .generated(member.declName.baseName.text, .asset(kind))
         }
         else {
             let members = members(in: node)
@@ -115,7 +163,7 @@ extension SourceVisitor {
                 return nil
             }
             
-            return .generated(name, kind)
+            return .generated(name, .asset(kind))
         }
     }
     
@@ -125,7 +173,7 @@ extension SourceVisitor {
         }
         
         let usage = sequence(first: parent) { $0.parent?.as(MemberAccessExprSyntax.self) }
-            .array()
+            .toArray()
             .last
         
         guard let usage else {
@@ -140,7 +188,7 @@ extension SourceVisitor {
     }
 }
 
-private extension ExploreKind {
+private extension ExploreKind.Asset {
     init?(literal: String) {
         switch literal {
         case "imageLiteral": self = .image
@@ -160,4 +208,8 @@ private extension SourceVisitor {
             return super.visit(node)
         }
     }
+}
+
+private extension Sequence {
+    func toArray() -> [Element] { Array(self) }
 }

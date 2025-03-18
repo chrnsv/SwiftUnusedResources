@@ -38,10 +38,10 @@ private extension XibParser {
 private extension ResourceProtocol {
     func toExploreUsage() -> ExploreUsage? {
         if let image = self as? Image {
-            return .string(image.name, .image)
+            return .string(image.name, .asset(.image))
         }
         else if let color = self as? NamedColor {
-            return .string(color.name, .color)
+            return .string(color.name, .asset(.color))
         }
         
         return nil
