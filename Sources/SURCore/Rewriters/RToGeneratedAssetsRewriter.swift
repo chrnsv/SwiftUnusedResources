@@ -27,7 +27,11 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         override func visit(_ node: ForceUnwrapExprSyntax) -> ExprSyntax {
             // Match pattern: (FunctionCallExprSyntax)! where call is R.image.<id>()
             if let call = node.expression.as(FunctionCallExprSyntax.self),
-               let replacement = replaceRImageCall(call) {
+               let baseReplacement = replaceRImageCall(call) {
+                // Preserve original trivia around the force-unwrap expression
+                let replacement = baseReplacement
+                    .with(\.leadingTrivia, node.leadingTrivia)
+                    .with(\.trailingTrivia, node.trailingTrivia)
                 return ExprSyntax(replacement)
             }
             return ExprSyntax(super.visit(node))
@@ -35,7 +39,11 @@ public struct RToGeneratedAssetsRewriter: Sendable {
 
         // Also support replacing direct function calls without force unwrap.
         override func visit(_ node: FunctionCallExprSyntax) -> ExprSyntax {
-            if let replacement = replaceRImageCall(node) {
+            if let baseReplacement = replaceRImageCall(node) {
+                // Preserve original trivia of the function call
+                let replacement = baseReplacement
+                    .with(\.leadingTrivia, node.leadingTrivia)
+                    .with(\.trailingTrivia, node.trailingTrivia)
                 return ExprSyntax(replacement)
             }
             return ExprSyntax(super.visit(node))
