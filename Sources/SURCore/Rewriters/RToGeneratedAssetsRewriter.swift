@@ -24,6 +24,20 @@ public struct RToGeneratedAssetsRewriter: Sendable {
 
     /// Rewriter that converts `R.image.<identifier>()!` -> `UIImage(resource: .<identifier>)`.
     private final class Rewriter: SyntaxRewriter {
+        override func visit(_ node: OptionalChainingExprSyntax) -> ExprSyntax {
+            // Match pattern: (FunctionCallExprSyntax)? where call is R.image.<id>()
+            if let call = node.expression.as(FunctionCallExprSyntax.self),
+               let baseReplacement = replaceRImageCall(call) {
+                // Remove the trailing '?' by returning the base replacement directly,
+                // but preserve original trivia of the optional chaining node.
+                let replacement = baseReplacement
+                    .with(\.leadingTrivia, node.leadingTrivia)
+                    .with(\.trailingTrivia, node.trailingTrivia)
+                return ExprSyntax(replacement)
+            }
+            return ExprSyntax(super.visit(node))
+        }
+
         override func visit(_ node: ForceUnwrapExprSyntax) -> ExprSyntax {
             // Match pattern: (FunctionCallExprSyntax)! where call is R.image.<id>()
             if let call = node.expression.as(FunctionCallExprSyntax.self),
