@@ -12,8 +12,18 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         let original = try String(contentsOf: url)
         let source = Parser.parse(source: original)
         let rewriter = Rewriter()
-        let transformed = rewriter.rewrite(source)
-        let newText = String(describing: transformed)
+        var transformed: Syntax = rewriter.rewrite(source)
+
+        // If we performed any replacements and UIKit isn't imported, insert it on the transformed file.
+        if rewriter.didChange {
+            let transformedFile = transformed.as(SourceFileSyntax.self) ?? source
+            if !hasUIKitImport(in: transformedFile) {
+                let withImport = insertUIKitImport(into: transformedFile)
+                transformed = Syntax(withImport)
+            }
+        }
+
+        let newText = transformed.description
 
         if newText != original {
             try newText.write(to: url, atomically: true, encoding: .utf8)
@@ -24,6 +34,8 @@ public struct RToGeneratedAssetsRewriter: Sendable {
 
     /// Rewriter that converts `R.image.<identifier>()!` -> `UIImage(resource: .<identifier>)`.
     private final class Rewriter: SyntaxRewriter {
+    private(set) var didChange = false
+
         override func visit(_ node: OptionalChainingExprSyntax) -> ExprSyntax {
             // Match pattern: (FunctionCallExprSyntax)? where call is R.image.<id>()
             if let call = node.expression.as(FunctionCallExprSyntax.self),
@@ -84,6 +96,7 @@ public struct RToGeneratedAssetsRewriter: Sendable {
 
             // Build `UIImage(resource: .<processed>)` expression via parsing
             let exprText = "UIImage(resource: .\(processed))"
+            didChange = true
             return parseExpr(exprText)
         }
 
@@ -103,5 +116,55 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             }
             return ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier(text)))
         }
+    }
+}
+
+private extension RToGeneratedAssetsRewriter {
+    func hasUIKitImport(in file: SourceFileSyntax) -> Bool {
+        for item in file.statements {
+            if let imp = item.item.as(ImportDeclSyntax.self) {
+                if imp.path.description == "UIKit" { return true }
+            }
+        }
+        return false
+    }
+
+    func insertUIKitImport(into file: SourceFileSyntax) -> SourceFileSyntax {
+        // Build an import decl item by parsing text to keep formatting correct.
+        let parsed = Parser.parse(source: "import UIKit\n")
+        guard var importItem = parsed.statements.first else { return file }
+
+        var insertIndex = 0
+        var lastImportIndex: Int?
+        for (i, item) in file.statements.enumerated() {
+            if item.item.is(ImportDeclSyntax.self) { lastImportIndex = i }
+        }
+        if let idx = lastImportIndex { insertIndex = idx + 1 }
+
+        // If inserting after an existing statement and that statement doesn't end
+        // with a newline, ensure the new import starts on a new line.
+        if insertIndex > 0 {
+            let prev = file.statements[file.statements.index(file.statements.startIndex, offsetBy: insertIndex - 1)]
+            if !triviaEndsWithNewline(prev.trailingTrivia) {
+                importItem = importItem.with(\.leadingTrivia, .newlines(1))
+            }
+        }
+
+        let newStatements = file.statements.inserting(importItem, at: insertIndex)
+    return file.with(\.statements, newStatements)
+    }
+
+    func triviaEndsWithNewline(_ trivia: Trivia?) -> Bool {
+        guard let trivia else { return false }
+        for piece in trivia.reversed() {
+            switch piece {
+            case .newlines(let n): return n > 0
+            case .carriageReturns(let n): return n > 0
+            case .carriageReturnLineFeeds(let n): return n > 0
+            case .spaces, .tabs, .verticalTabs, .formfeeds: continue
+            default: return false
+            }
+        }
+        return false
     }
 }
