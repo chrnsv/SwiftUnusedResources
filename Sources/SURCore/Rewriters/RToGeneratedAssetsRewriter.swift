@@ -14,11 +14,20 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         let rewriter = Rewriter()
         var transformed: Syntax = rewriter.rewrite(source)
 
-    // If we performed any UIKit replacements and UIKit isn't imported, insert it on the transformed file.
-    if rewriter.didUIKitChange {
+        // If we performed any UIKit replacements and UIKit isn't imported, insert it on the transformed file.
+        if rewriter.didUIKitChange {
             let transformedFile = transformed.as(SourceFileSyntax.self) ?? source
             if !hasUIKitImport(in: transformedFile) {
                 let withImport = insertUIKitImport(into: transformedFile)
+                transformed = Syntax(withImport)
+            }
+        }
+
+        // If we performed any SwiftUI replacements and SwiftUI isn't imported, insert it too.
+        if rewriter.didSwiftUIChange {
+            let transformedFile = transformed.as(SourceFileSyntax.self) ?? source
+            if !hasSwiftUIImport(in: transformedFile) {
+                let withImport = insertSwiftUIImport(into: transformedFile)
                 transformed = Syntax(withImport)
             }
         }
@@ -165,6 +174,37 @@ private extension RToGeneratedAssetsRewriter {
 
         let newStatements = file.statements.inserting(importItem, at: insertIndex)
     return file.with(\.statements, newStatements)
+    }
+
+    func hasSwiftUIImport(in file: SourceFileSyntax) -> Bool {
+        for item in file.statements {
+            if let imp = item.item.as(ImportDeclSyntax.self) {
+                if imp.path.description == "SwiftUI" { return true }
+            }
+        }
+        return false
+    }
+
+    func insertSwiftUIImport(into file: SourceFileSyntax) -> SourceFileSyntax {
+        let parsed = Parser.parse(source: "import SwiftUI\n")
+        guard var importItem = parsed.statements.first else { return file }
+
+        var insertIndex = 0
+        var lastImportIndex: Int?
+        for (i, item) in file.statements.enumerated() {
+            if item.item.is(ImportDeclSyntax.self) { lastImportIndex = i }
+        }
+        if let idx = lastImportIndex { insertIndex = idx + 1 }
+
+        if insertIndex > 0 {
+            let prev = file.statements[file.statements.index(file.statements.startIndex, offsetBy: insertIndex - 1)]
+            if !triviaEndsWithNewline(prev.trailingTrivia) {
+                importItem = importItem.with(\.leadingTrivia, .newlines(1))
+            }
+        }
+
+        let newStatements = file.statements.inserting(importItem, at: insertIndex)
+        return file.with(\.statements, newStatements)
     }
 
     func triviaEndsWithNewline(_ trivia: Trivia?) -> Bool {
