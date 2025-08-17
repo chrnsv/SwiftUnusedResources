@@ -14,8 +14,8 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         let rewriter = Rewriter()
         var transformed: Syntax = rewriter.rewrite(source)
 
-        // If we performed any replacements and UIKit isn't imported, insert it on the transformed file.
-        if rewriter.didChange {
+    // If we performed any UIKit replacements and UIKit isn't imported, insert it on the transformed file.
+    if rewriter.didUIKitChange {
             let transformedFile = transformed.as(SourceFileSyntax.self) ?? source
             if !hasUIKitImport(in: transformedFile) {
                 let withImport = insertUIKitImport(into: transformedFile)
@@ -34,7 +34,8 @@ public struct RToGeneratedAssetsRewriter: Sendable {
 
     /// Rewriter that converts `R.image.<identifier>()!` -> `UIImage(resource: .<identifier>)`.
     private final class Rewriter: SyntaxRewriter {
-    private(set) var didChange = false
+    private(set) var didUIKitChange = false
+    private(set) var didSwiftUIChange = false
 
         override func visit(_ node: OptionalChainingExprSyntax) -> ExprSyntax {
             // Match pattern: (FunctionCallExprSyntax)? where call is R.image.<id>()
@@ -79,25 +80,37 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             // Ensure no arguments in the call `()`
             if !call.arguments.isEmpty { return nil }
 
-            // calledExpression must be a member access like `R.image.<id>`
-            guard let lastMember = call.calledExpression.as(MemberAccessExprSyntax.self) else { return nil }
+            // Called expression could be either:
+            // A: R.image.<id>
+            // B: R.image.<id>.image
+            guard let called = call.calledExpression.as(MemberAccessExprSyntax.self) else { return nil }
 
-            let identifier = lastMember.declName.baseName.text
-
-            // Base must be `R.image`
-            guard let mid = lastMember.base?.as(MemberAccessExprSyntax.self),
-                  mid.declName.baseName.text == "image",
-                  let first = mid.base?.as(DeclReferenceExprSyntax.self),
-                  first.baseName.text == "R" else {
-                return nil
+            // Try SwiftUI pattern first: ... .image() where base is R.image.<id>
+            if called.declName.baseName.text == "image",
+               let idMember = called.base?.as(MemberAccessExprSyntax.self),
+               let mid = idMember.base?.as(MemberAccessExprSyntax.self),
+               mid.declName.baseName.text == "image",
+               let first = mid.base?.as(DeclReferenceExprSyntax.self),
+               first.baseName.text == "R" {
+                let identifier = idMember.declName.baseName.text
+                let processed = stripImageSuffix(identifier)
+                didSwiftUIChange = true
+                return parseExpr("Image(.\(processed))")
             }
 
-            let processed = stripImageSuffix(identifier)
+            // UIKit pattern: R.image.<id>()
+            if let lastMember = call.calledExpression.as(MemberAccessExprSyntax.self),
+               let mid = lastMember.base?.as(MemberAccessExprSyntax.self),
+               mid.declName.baseName.text == "image",
+               let first = mid.base?.as(DeclReferenceExprSyntax.self),
+               first.baseName.text == "R" {
+                let identifier = lastMember.declName.baseName.text
+                let processed = stripImageSuffix(identifier)
+                didUIKitChange = true
+                return parseExpr("UIImage(resource: .\(processed))")
+            }
 
-            // Build `UIImage(resource: .<processed>)` expression via parsing
-            let exprText = "UIImage(resource: .\(processed))"
-            didChange = true
-            return parseExpr(exprText)
+            return nil
         }
 
         private func stripImageSuffix(_ name: String) -> String {
