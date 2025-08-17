@@ -85,6 +85,37 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             return ExprSyntax(super.visit(node))
         }
 
+        // Replace standalone member uses: R.image.<id> -> ImageResource.<id>
+        override func visit(_ node: MemberAccessExprSyntax) -> ExprSyntax {
+            // Skip when this node is the called expression of a function call (UIKit case)
+            if let parentCall = node.parent?.as(FunctionCallExprSyntax.self),
+               parentCall.calledExpression.id == node.id,
+               parentCall.arguments.isEmpty {
+                return ExprSyntax(super.visit(node))
+            }
+
+            // Skip when this node is the base of a trailing `.image` (SwiftUI case)
+            if let parentMember = node.parent?.as(MemberAccessExprSyntax.self),
+               parentMember.declName.baseName.text == "image" {
+                return ExprSyntax(super.visit(node))
+            }
+
+            // Match R.image.<id>
+            if let mid = node.base?.as(MemberAccessExprSyntax.self),
+               mid.declName.baseName.text == "image",
+               let first = mid.base?.as(DeclReferenceExprSyntax.self),
+               first.baseName.text == "R" {
+                let identifier = node.declName.baseName.text
+                let processed = stripImageSuffix(identifier)
+                let replacement = parseExpr("ImageResource.\(processed)")
+                    .with(\.leadingTrivia, node.leadingTrivia)
+                    .with(\.trailingTrivia, node.trailingTrivia)
+                return ExprSyntax(replacement)
+            }
+
+            return ExprSyntax(super.visit(node))
+        }
+
         private func replaceRImageCall(_ call: FunctionCallExprSyntax) -> ExprSyntax? {
             // Ensure no arguments in the call `()`
             if !call.arguments.isEmpty { return nil }
