@@ -73,7 +73,7 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             return ExprSyntax(super.visit(node))
         }
 
-        // Also support replacing direct function calls without force unwrap.
+    // Also support replacing direct function calls without force unwrap.
         override func visit(_ node: FunctionCallExprSyntax) -> ExprSyntax {
             if let baseReplacement = replaceRImageCall(node) {
                 // Preserve original trivia of the function call
@@ -106,8 +106,21 @@ public struct RToGeneratedAssetsRewriter: Sendable {
                let first = mid.base?.as(DeclReferenceExprSyntax.self),
                first.baseName.text == "R" {
                 let identifier = node.declName.baseName.text
-                let processed = stripImageSuffix(identifier)
+                let processed = stripSuffix(identifier, "image")
                 let replacement = parseExpr("ImageResource.\(processed)")
+                    .with(\.leadingTrivia, node.leadingTrivia)
+                    .with(\.trailingTrivia, node.trailingTrivia)
+                return ExprSyntax(replacement)
+            }
+
+            // Match R.color.<id>
+            if let mid = node.base?.as(MemberAccessExprSyntax.self),
+               mid.declName.baseName.text == "color",
+               let first = mid.base?.as(DeclReferenceExprSyntax.self),
+               first.baseName.text == "R" {
+                let identifier = node.declName.baseName.text
+                let processed = stripSuffix(identifier, "color")
+                let replacement = parseExpr("ColorResource.\(processed)")
                     .with(\.leadingTrivia, node.leadingTrivia)
                     .with(\.trailingTrivia, node.trailingTrivia)
                 return ExprSyntax(replacement)
@@ -125,7 +138,8 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             // B: R.image.<id>.image
             guard let called = call.calledExpression.as(MemberAccessExprSyntax.self) else { return nil }
 
-            // Try SwiftUI pattern first: ... .image() where base is R.image.<id>
+            // Try SwiftUI patterns first
+            // Image: ... .image() where base is R.image.<id>
             if called.declName.baseName.text == "image",
                let idMember = called.base?.as(MemberAccessExprSyntax.self),
                let mid = idMember.base?.as(MemberAccessExprSyntax.self),
@@ -133,30 +147,48 @@ public struct RToGeneratedAssetsRewriter: Sendable {
                let first = mid.base?.as(DeclReferenceExprSyntax.self),
                first.baseName.text == "R" {
                 let identifier = idMember.declName.baseName.text
-                let processed = stripImageSuffix(identifier)
+                let processed = stripSuffix(identifier, "image")
                 didSwiftUIChange = true
                 return parseExpr("Image(.\(processed))")
             }
 
-            // UIKit pattern: R.image.<id>()
+            // Color: ... .color() where base is R.color.<id>
+            if called.declName.baseName.text == "color",
+               let idMember = called.base?.as(MemberAccessExprSyntax.self),
+               let mid = idMember.base?.as(MemberAccessExprSyntax.self),
+               mid.declName.baseName.text == "color",
+               let first = mid.base?.as(DeclReferenceExprSyntax.self),
+               first.baseName.text == "R" {
+                let identifier = idMember.declName.baseName.text
+                let processed = stripSuffix(identifier, "color")
+                didSwiftUIChange = true
+                return parseExpr("Color(.\(processed))")
+            }
+
+            // UIKit patterns
             if let lastMember = call.calledExpression.as(MemberAccessExprSyntax.self),
                let mid = lastMember.base?.as(MemberAccessExprSyntax.self),
-               mid.declName.baseName.text == "image",
                let first = mid.base?.as(DeclReferenceExprSyntax.self),
                first.baseName.text == "R" {
                 let identifier = lastMember.declName.baseName.text
-                let processed = stripImageSuffix(identifier)
-                didUIKitChange = true
-                return parseExpr("UIImage(resource: .\(processed))")
+                if mid.declName.baseName.text == "image" {
+                    let processed = stripSuffix(identifier, "image")
+                    didUIKitChange = true
+                    return parseExpr("UIImage(resource: .\(processed))")
+                } else if mid.declName.baseName.text == "color" {
+                    let processed = stripSuffix(identifier, "color")
+                    didUIKitChange = true
+                    return parseExpr("UIColor(resource: .\(processed))")
+                }
             }
 
             return nil
         }
 
-        private func stripImageSuffix(_ name: String) -> String {
+        private func stripSuffix(_ name: String, _ suffix: String) -> String {
             let lower = name.lowercased()
-            if lower.hasSuffix("image"), name.count > 5 {
-                return String(name.dropLast(5))
+            if lower.hasSuffix(suffix), name.count > suffix.count {
+                return String(name.dropLast(suffix.count))
             }
             return name
         }
