@@ -42,51 +42,12 @@ public struct RToGeneratedAssetsRewriter: Sendable {
     }
 
     /// Rewriter that converts `R.image.<identifier>()!` -> `UIImage(resource: .<identifier>)`.
-    private final class Rewriter: SyntaxRewriter {
+}
+
+private extension RToGeneratedAssetsRewriter {
+    final class Rewriter: SyntaxRewriter {
         private(set) var didUIKitChange = false
         private(set) var didSwiftUIChange = false
-
-        /// Matches `R.<kind>.<identifier>` returning (kind, identifier) if it matches.
-        private func matchRKindIdentifier(from member: MemberAccessExprSyntax) -> (kind: String, identifier: String)? {
-            guard let mid = member.base?.as(MemberAccessExprSyntax.self),
-                  let first = mid.base?.as(DeclReferenceExprSyntax.self),
-                  first.baseName.text == "R" else { return nil }
-            let kind = mid.declName.baseName.text
-            let identifier = member.declName.baseName.text
-            return (kind, identifier)
-        }
-
-        /// Builds a SwiftUI expression for a given kind and identifier, setting the appropriate flag.
-        private func swiftUIExpr(for kind: String, identifier: String) -> ExprSyntax? {
-            switch kind {
-            case "image":
-                didSwiftUIChange = true
-                let processed = stripSuffix(identifier, "image")
-                return parseExpr("Image(.\(processed))")
-            case "color":
-                didSwiftUIChange = true
-                let processed = stripSuffix(identifier, "color")
-                return parseExpr("Color(.\(processed))")
-            default:
-                return nil
-            }
-        }
-
-        /// Builds a UIKit expression for a given kind and identifier, setting the appropriate flag.
-        private func uiKitExpr(for kind: String, identifier: String) -> ExprSyntax? {
-            switch kind {
-            case "image":
-                didUIKitChange = true
-                let processed = stripSuffix(identifier, "image")
-                return parseExpr("UIImage(resource: .\(processed))")
-            case "color":
-                didUIKitChange = true
-                let processed = stripSuffix(identifier, "color")
-                return parseExpr("UIColor(resource: .\(processed))")
-            default:
-                return nil
-            }
-        }
 
         override func visit(_ node: OptionalChainingExprSyntax) -> ExprSyntax {
             // Match pattern: (FunctionCallExprSyntax)? where call is R.image.<id>()
@@ -164,50 +125,6 @@ public struct RToGeneratedAssetsRewriter: Sendable {
 
             return ExprSyntax(super.visit(node))
         }
-
-        private func replaceRImageCall(_ call: FunctionCallExprSyntax) -> ExprSyntax? {
-            // Ensure no arguments in the call `()`
-            if !call.arguments.isEmpty { return nil }
-
-            // Called expression could be either:
-            // A: R.<kind>.<id>
-            // B: R.<kind>.<id>.image (SwiftUI accessor)
-            guard let called = call.calledExpression.as(MemberAccessExprSyntax.self) else { return nil }
-
-            // SwiftUI accessor case: `.image()` or `.color()` where base is R.<kind>.<id>
-            if (called.declName.baseName.text == "image" || called.declName.baseName.text == "color"),
-               let idMember = called.base?.as(MemberAccessExprSyntax.self),
-               let match = matchRKindIdentifier(from: idMember) {
-                // Ensure accessor matches kind for safety
-                if let expr = swiftUIExpr(for: match.kind, identifier: match.identifier) {
-                    return expr
-                }
-            }
-
-            // Direct UIKit case: called expression is R.<kind>.<id>
-            if let match = matchRKindIdentifier(from: called) {
-                return uiKitExpr(for: match.kind, identifier: match.identifier)
-            }
-
-            return nil
-        }
-
-        private func stripSuffix(_ name: String, _ suffix: String) -> String {
-            let lower = name.lowercased()
-            if lower.hasSuffix(suffix), name.count > suffix.count {
-                return String(name.dropLast(suffix.count))
-            }
-            return name
-        }
-
-        private func parseExpr(_ text: String) -> ExprSyntax {
-            // Parse a tiny source text as expression: we wrap it in a dummy file
-            let file = Parser.parse(source: text)
-            if let item = file.statements.first?.item.as(ExprSyntax.self) {
-                return item
-            }
-            return ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier(text)))
-        }
     }
 }
 
@@ -266,3 +183,113 @@ private extension RToGeneratedAssetsRewriter {
     }
 }
 
+private extension RToGeneratedAssetsRewriter.Rewriter {
+    /// Matches `R.<kind>.<identifier>` returning (kind, identifier) if it matches.
+    private func matchRKindIdentifier(from member: MemberAccessExprSyntax) -> (kind: String, identifier: String)? {
+        guard
+            let mid = member.base?.as(MemberAccessExprSyntax.self),
+            let first = mid.base?.as(DeclReferenceExprSyntax.self),
+            first.baseName.text == "R"
+        else {
+            return nil
+        }
+        
+        let kind = mid.declName.baseName.text
+        let identifier = member.declName.baseName.text
+        
+        return (kind, identifier)
+    }
+
+    /// Builds a SwiftUI expression for a given kind and identifier, setting the appropriate flag.
+    private func swiftUIExpr(for kind: String, identifier: String) -> ExprSyntax? {
+        switch kind {
+        case "image":
+            didSwiftUIChange = true
+            let processed = stripSuffix(identifier, "image")
+            return parseExpr("Image(.\(processed))")
+        case "color":
+            didSwiftUIChange = true
+            let processed = stripSuffix(identifier, "color")
+            return parseExpr("Color(.\(processed))")
+        default:
+            return nil
+        }
+    }
+
+    /// Builds a UIKit expression for a given kind and identifier, setting the appropriate flag.
+    private func uiKitExpr(for kind: String, identifier: String) -> ExprSyntax? {
+        switch kind {
+        case "image":
+            didUIKitChange = true
+            let processed = stripSuffix(identifier, "image")
+            return parseExpr("UIImage(resource: .\(processed))")
+        case "color":
+            didUIKitChange = true
+            let processed = stripSuffix(identifier, "color")
+            return parseExpr("UIColor(resource: .\(processed))")
+        default:
+            return nil
+        }
+    }
+    
+    private func replaceRImageCall(_ call: FunctionCallExprSyntax) -> ExprSyntax? {
+        // Ensure no arguments in the call `()`
+        if !call.arguments.isEmpty { return nil }
+
+        // Called expression could be either:
+        // A: R.<kind>.<id>
+        // B: R.<kind>.<id>.image (SwiftUI accessor)
+        guard let called = call.calledExpression.as(MemberAccessExprSyntax.self) else { return nil }
+
+        // SwiftUI accessor case: `.image()` or `.color()` where base is R.<kind>.<id>
+        if (called.declName.baseName.text == "image" || called.declName.baseName.text == "color"),
+           let idMember = called.base?.as(MemberAccessExprSyntax.self),
+           let match = matchRKindIdentifier(from: idMember) {
+            // Ensure accessor matches kind for safety
+            if let expr = swiftUIExpr(for: match.kind, identifier: match.identifier) {
+                return expr
+            }
+        }
+
+        // Direct UIKit case: called expression is R.<kind>.<id>
+        if let match = matchRKindIdentifier(from: called) {
+            return uiKitExpr(for: match.kind, identifier: match.identifier)
+        }
+
+        return nil
+    }
+
+    private func stripSuffix(_ name: String, _ suffix: String) -> String {
+        let lower = name.lowercased()
+        if lower.hasSuffix(suffix), name.count > suffix.count {
+            return String(name.dropLast(suffix.count))
+        }
+        return name
+    }
+
+    private func parseExpr(_ text: String) -> ExprSyntax {
+        // Parse a tiny source text as expression: we wrap it in a dummy file
+        let file = Parser.parse(source: text)
+        if let item = file.statements.first?.item.as(ExprSyntax.self) {
+            return item
+        }
+        return ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier(text)))
+    }
+}
+
+private enum Kind: String {
+    case image
+    case color
+}
+
+private enum Module {
+    case uiKit
+    case swiftUI
+    
+    var name: String {
+        switch self {
+        case .uiKit: return "UIKit"
+        case .swiftUI: return "SwiftUI"
+        }
+    }
+}
