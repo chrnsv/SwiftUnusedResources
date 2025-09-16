@@ -15,7 +15,7 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         var transformed: Syntax = rewriter.rewrite(source)
 
         // If we performed any UIKit replacements and UIKit isn't imported, insert it on the transformed file.
-        if rewriter.didUIKitChange {
+        if rewriter.changedModules.contains(.uiKit) {
             let transformedFile = transformed.as(SourceFileSyntax.self) ?? source
             if !hasImport(named: "UIKit", in: transformedFile) {
                 let withImport = insertImport(named: "UIKit", into: transformedFile)
@@ -24,7 +24,7 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         }
 
         // If we performed any SwiftUI replacements and SwiftUI isn't imported, insert it too.
-        if rewriter.didSwiftUIChange {
+        if rewriter.changedModules.contains(.swiftUI) {
             let transformedFile = transformed.as(SourceFileSyntax.self) ?? source
             if !hasImport(named: "SwiftUI", in: transformedFile) {
                 let withImport = insertImport(named: "SwiftUI", into: transformedFile)
@@ -46,84 +46,79 @@ public struct RToGeneratedAssetsRewriter: Sendable {
 
 private extension RToGeneratedAssetsRewriter {
     final class Rewriter: SyntaxRewriter {
-        private(set) var didUIKitChange = false
-        private(set) var didSwiftUIChange = false
+        private(set) var changedModules: Set<Module> = []
 
         override func visit(_ node: OptionalChainingExprSyntax) -> ExprSyntax {
             // Match pattern: (FunctionCallExprSyntax)? where call is R.image.<id>()
-            if let call = node.expression.as(FunctionCallExprSyntax.self),
-               let baseReplacement = replaceRImageCall(call) {
+            if
+                let call = node.expression.as(FunctionCallExprSyntax.self),
+                let baseReplacement = replaceCall(call)
+            {
                 // Remove the trailing '?' by returning the base replacement directly,
                 // but preserve original trivia of the optional chaining node.
-                let replacement = baseReplacement
+                return baseReplacement
                     .with(\.leadingTrivia, node.leadingTrivia)
                     .with(\.trailingTrivia, node.trailingTrivia)
-                return ExprSyntax(replacement)
             }
-            return ExprSyntax(super.visit(node))
+            
+            return super.visit(node)
         }
 
         override func visit(_ node: ForceUnwrapExprSyntax) -> ExprSyntax {
             // Match pattern: (FunctionCallExprSyntax)! where call is R.image.<id>()
-            if let call = node.expression.as(FunctionCallExprSyntax.self),
-               let baseReplacement = replaceRImageCall(call) {
+            if
+                let call = node.expression.as(FunctionCallExprSyntax.self),
+                let baseReplacement = replaceCall(call)
+            {
                 // Preserve original trivia around the force-unwrap expression
-                let replacement = baseReplacement
+                return baseReplacement
                     .with(\.leadingTrivia, node.leadingTrivia)
                     .with(\.trailingTrivia, node.trailingTrivia)
-                return ExprSyntax(replacement)
             }
-            return ExprSyntax(super.visit(node))
+            
+            return super.visit(node)
         }
 
         // Also support replacing direct function calls without force unwrap.
         override func visit(_ node: FunctionCallExprSyntax) -> ExprSyntax {
-            if let baseReplacement = replaceRImageCall(node) {
+            if let baseReplacement = replaceCall(node) {
                 // Preserve original trivia of the function call
-                let replacement = baseReplacement
+                return baseReplacement
                     .with(\.leadingTrivia, node.leadingTrivia)
                     .with(\.trailingTrivia, node.trailingTrivia)
-                return ExprSyntax(replacement)
             }
-            return ExprSyntax(super.visit(node))
+            
+            return super.visit(node)
         }
 
         // Replace standalone member uses: R.<kind>.<id> -> <ResourceType>Resource.<id>
         override func visit(_ node: MemberAccessExprSyntax) -> ExprSyntax {
             // Skip when this node is the called expression of a function call (UIKit case)
-            if let parentCall = node.parent?.as(FunctionCallExprSyntax.self),
-               parentCall.calledExpression.id == node.id,
-               parentCall.arguments.isEmpty {
-                return ExprSyntax(super.visit(node))
+            if
+                let parentCall = node.parent?.as(FunctionCallExprSyntax.self),
+                parentCall.calledExpression.id == node.id,
+                parentCall.arguments.isEmpty
+            {
+                return super.visit(node)
             }
 
             // Skip when this node is the base of a trailing `.image` (SwiftUI case)
-            if let parentMember = node.parent?.as(MemberAccessExprSyntax.self),
-               parentMember.declName.baseName.text == "image" {
-                return ExprSyntax(super.visit(node))
+            if
+                let parentMember = node.parent?.as(MemberAccessExprSyntax.self),
+                Kind(rawValue: parentMember.declName.baseName.text) != nil
+            {
+                return super.visit(node)
             }
 
             // Standalone member uses: R.<kind>.<id> -> <ResourceType>Resource.<id>
             if let (kind, identifier) = matchRKindIdentifier(from: node) {
-                let processed: String
-                let resourceType: String
-                switch kind {
-                case "image":
-                    processed = stripSuffix(identifier, "image")
-                    resourceType = "ImageResource"
-                case "color":
-                    processed = stripSuffix(identifier, "color")
-                    resourceType = "ColorResource"
-                default:
-                    return ExprSyntax(super.visit(node))
-                }
-                let replacement = parseExpr("\(resourceType).\(processed)")
+                // Create replacement expression: <ResourceType>Resource.<id>
+                return parseExpr(kind.resource(with: identifier.withoutImageAndColor()))
                     .with(\.leadingTrivia, node.leadingTrivia)
                     .with(\.trailingTrivia, node.trailingTrivia)
-                return ExprSyntax(replacement)
             }
 
-            return ExprSyntax(super.visit(node))
+            return super.visit(node)
         }
     }
 }
@@ -161,8 +156,8 @@ private extension RToGeneratedAssetsRewriter {
     func lastImportInsertionIndex(in file: SourceFileSyntax) -> Int {
         var insertIndex = 0
         var lastImportIndex: Int?
-        for (i, item) in file.statements.enumerated() {
-            if item.item.is(ImportDeclSyntax.self) { lastImportIndex = i }
+        for (i, item) in file.statements.enumerated() where item.item.is(ImportDeclSyntax.self) {
+            lastImportIndex = i
         }
         if let idx = lastImportIndex { insertIndex = idx + 1 }
         return insertIndex
@@ -185,7 +180,7 @@ private extension RToGeneratedAssetsRewriter {
 
 private extension RToGeneratedAssetsRewriter.Rewriter {
     /// Matches `R.<kind>.<identifier>` returning (kind, identifier) if it matches.
-    private func matchRKindIdentifier(from member: MemberAccessExprSyntax) -> (kind: String, identifier: String)? {
+    private func matchRKindIdentifier(from member: MemberAccessExprSyntax) -> (kind: Kind, identifier: String)? {
         guard
             let mid = member.base?.as(MemberAccessExprSyntax.self),
             let first = mid.base?.as(DeclReferenceExprSyntax.self),
@@ -194,66 +189,49 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
             return nil
         }
         
-        let kind = mid.declName.baseName.text
+        guard let kind = Kind(rawValue: mid.declName.baseName.text) else {
+            return nil
+        }
+        
         let identifier = member.declName.baseName.text
         
         return (kind, identifier)
     }
-
-    /// Builds a SwiftUI expression for a given kind and identifier, setting the appropriate flag.
-    private func swiftUIExpr(for kind: String, identifier: String) -> ExprSyntax? {
-        switch kind {
-        case "image":
-            didSwiftUIChange = true
-            let processed = stripSuffix(identifier, "image")
-            return parseExpr("Image(.\(processed))")
-        case "color":
-            didSwiftUIChange = true
-            let processed = stripSuffix(identifier, "color")
-            return parseExpr("Color(.\(processed))")
-        default:
-            return nil
-        }
-    }
-
-    /// Builds a UIKit expression for a given kind and identifier, setting the appropriate flag.
-    private func uiKitExpr(for kind: String, identifier: String) -> ExprSyntax? {
-        switch kind {
-        case "image":
-            didUIKitChange = true
-            let processed = stripSuffix(identifier, "image")
-            return parseExpr("UIImage(resource: .\(processed))")
-        case "color":
-            didUIKitChange = true
-            let processed = stripSuffix(identifier, "color")
-            return parseExpr("UIColor(resource: .\(processed))")
-        default:
-            return nil
-        }
-    }
     
-    private func replaceRImageCall(_ call: FunctionCallExprSyntax) -> ExprSyntax? {
+    /// creates an expression for module
+    private func expr(for kind: Kind, with identifier: String, from module: Module) -> ExprSyntax {
+        changedModules.insert(module)
+        let resource = kind.resource(for: module, with: identifier.withoutImageAndColor())
+        return parseExpr(resource)
+    }
+        
+    
+    private func replaceCall(_ call: FunctionCallExprSyntax) -> ExprSyntax? {
         // Ensure no arguments in the call `()`
-        if !call.arguments.isEmpty { return nil }
+        if !call.arguments.isEmpty {
+            return nil
+        }
 
         // Called expression could be either:
         // A: R.<kind>.<id>
         // B: R.<kind>.<id>.image (SwiftUI accessor)
-        guard let called = call.calledExpression.as(MemberAccessExprSyntax.self) else { return nil }
+        guard let called = call.calledExpression.as(MemberAccessExprSyntax.self) else {
+            return nil
+        }
 
         // SwiftUI accessor case: `.image()` or `.color()` where base is R.<kind>.<id>
-        if (called.declName.baseName.text == "image" || called.declName.baseName.text == "color"),
-           let idMember = called.base?.as(MemberAccessExprSyntax.self),
-           let match = matchRKindIdentifier(from: idMember) {
+        if
+            Kind(rawValue: called.declName.baseName.text) != nil,
+            let idMember = called.base?.as(MemberAccessExprSyntax.self),
+            let match = matchRKindIdentifier(from: idMember)
+        {
             // Ensure accessor matches kind for safety
-            if let expr = swiftUIExpr(for: match.kind, identifier: match.identifier) {
-                return expr
-            }
+            return expr(for: match.kind, with: match.identifier, from: .swiftUI)
         }
 
         // Direct UIKit case: called expression is R.<kind>.<id>
         if let match = matchRKindIdentifier(from: called) {
-            return uiKitExpr(for: match.kind, identifier: match.identifier)
+            return expr(for: match.kind, with: match.identifier, from: .uiKit)
         }
 
         return nil
@@ -280,6 +258,29 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
 private enum Kind: String {
     case image
     case color
+    
+    func resource(for module: Module, with identifier: String) -> String {
+        switch module {
+        case .swiftUI:
+            switch self {
+            case .image: "Image(.\(identifier))"
+            case .color: "Color(.\(identifier))"
+            }
+            
+        case .uiKit:
+            switch self {
+            case .image: "UIImage(resource: .\(identifier))"
+            case .color: "UIColor(resource: .\(identifier))"
+            }
+        }
+    }
+    
+    func resource(with identifier: String) -> String {
+        switch self {
+        case .image: "ImageResource.\(identifier)"
+        case .color: "ColorResource.\(identifier)"
+        }
+    }
 }
 
 private enum Module {
