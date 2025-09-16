@@ -101,6 +101,7 @@ extension CLI {
         func run() throws {
             var changed = 0
             let rewriter = RToGeneratedAssetsRewriter()
+            let stringsRewriter = RToGeneratedStringsRewriter(projectAt: path.url)
 
             let files: [Path]
             if path.isDirectory {
@@ -110,7 +111,8 @@ extension CLI {
             }
 
             for file in files {
-                if try rewriter.rewrite(fileAt: file.url) { changed += 1 }
+//                if try rewriter.rewrite(fileAt: file.url) { changed += 1 }
+                if try stringsRewriter.rewrite(fileAt: file.url) { changed += 1 }
             }
 
             print("Rewrote \(changed) files")

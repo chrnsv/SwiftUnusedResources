@@ -113,7 +113,7 @@ private extension RToGeneratedAssetsRewriter {
             // Standalone member uses: R.<kind>.<id> -> <ResourceType>Resource.<id>
             if let (kind, identifier) = matchRKindIdentifier(from: node) {
                 // Create replacement expression: <ResourceType>Resource.<id>
-                return parseExpr(kind.resource(with: identifier.withoutImageAndColor()))
+                return .parse(kind.resource(with: identifier.withoutImageAndColor()))
                     .with(\.leadingTrivia, node.leadingTrivia)
                     .with(\.trailingTrivia, node.trailingTrivia)
             }
@@ -202,9 +202,8 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
     private func expr(for kind: Kind, with identifier: String, from module: Module) -> ExprSyntax {
         changedModules.insert(module)
         let resource = kind.resource(for: module, with: identifier.withoutImageAndColor())
-        return parseExpr(resource)
+        return .parse(resource)
     }
-        
     
     private func replaceCall(_ call: FunctionCallExprSyntax) -> ExprSyntax? {
         // Ensure no arguments in the call `()`
@@ -235,23 +234,6 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
         }
 
         return nil
-    }
-
-    private func stripSuffix(_ name: String, _ suffix: String) -> String {
-        let lower = name.lowercased()
-        if lower.hasSuffix(suffix), name.count > suffix.count {
-            return String(name.dropLast(suffix.count))
-        }
-        return name
-    }
-
-    private func parseExpr(_ text: String) -> ExprSyntax {
-        // Parse a tiny source text as expression: we wrap it in a dummy file
-        let file = Parser.parse(source: text)
-        if let item = file.statements.first?.item.as(ExprSyntax.self) {
-            return item
-        }
-        return ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier(text)))
     }
 }
 
