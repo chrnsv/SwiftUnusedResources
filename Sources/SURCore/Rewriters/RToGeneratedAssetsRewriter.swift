@@ -43,8 +43,50 @@ public struct RToGeneratedAssetsRewriter: Sendable {
 
     /// Rewriter that converts `R.image.<identifier>()!` -> `UIImage(resource: .<identifier>)`.
     private final class Rewriter: SyntaxRewriter {
-    private(set) var didUIKitChange = false
-    private(set) var didSwiftUIChange = false
+        private(set) var didUIKitChange = false
+        private(set) var didSwiftUIChange = false
+
+        /// Matches `R.<kind>.<identifier>` returning (kind, identifier) if it matches.
+        private func matchRKindIdentifier(from member: MemberAccessExprSyntax) -> (kind: String, identifier: String)? {
+            guard let mid = member.base?.as(MemberAccessExprSyntax.self),
+                  let first = mid.base?.as(DeclReferenceExprSyntax.self),
+                  first.baseName.text == "R" else { return nil }
+            let kind = mid.declName.baseName.text
+            let identifier = member.declName.baseName.text
+            return (kind, identifier)
+        }
+
+        /// Builds a SwiftUI expression for a given kind and identifier, setting the appropriate flag.
+        private func swiftUIExpr(for kind: String, identifier: String) -> ExprSyntax? {
+            switch kind {
+            case "image":
+                didSwiftUIChange = true
+                let processed = stripSuffix(identifier, "image")
+                return parseExpr("Image(.\(processed))")
+            case "color":
+                didSwiftUIChange = true
+                let processed = stripSuffix(identifier, "color")
+                return parseExpr("Color(.\(processed))")
+            default:
+                return nil
+            }
+        }
+
+        /// Builds a UIKit expression for a given kind and identifier, setting the appropriate flag.
+        private func uiKitExpr(for kind: String, identifier: String) -> ExprSyntax? {
+            switch kind {
+            case "image":
+                didUIKitChange = true
+                let processed = stripSuffix(identifier, "image")
+                return parseExpr("UIImage(resource: .\(processed))")
+            case "color":
+                didUIKitChange = true
+                let processed = stripSuffix(identifier, "color")
+                return parseExpr("UIColor(resource: .\(processed))")
+            default:
+                return nil
+            }
+        }
 
         override func visit(_ node: OptionalChainingExprSyntax) -> ExprSyntax {
             // Match pattern: (FunctionCallExprSyntax)? where call is R.image.<id>()
@@ -73,7 +115,7 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             return ExprSyntax(super.visit(node))
         }
 
-    // Also support replacing direct function calls without force unwrap.
+        // Also support replacing direct function calls without force unwrap.
         override func visit(_ node: FunctionCallExprSyntax) -> ExprSyntax {
             if let baseReplacement = replaceRImageCall(node) {
                 // Preserve original trivia of the function call
@@ -85,7 +127,7 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             return ExprSyntax(super.visit(node))
         }
 
-        // Replace standalone member uses: R.image.<id> -> ImageResource.<id>
+        // Replace standalone member uses: R.<kind>.<id> -> <ResourceType>Resource.<id>
         override func visit(_ node: MemberAccessExprSyntax) -> ExprSyntax {
             // Skip when this node is the called expression of a function call (UIKit case)
             if let parentCall = node.parent?.as(FunctionCallExprSyntax.self),
@@ -100,27 +142,21 @@ public struct RToGeneratedAssetsRewriter: Sendable {
                 return ExprSyntax(super.visit(node))
             }
 
-            // Match R.image.<id>
-            if let mid = node.base?.as(MemberAccessExprSyntax.self),
-               mid.declName.baseName.text == "image",
-               let first = mid.base?.as(DeclReferenceExprSyntax.self),
-               first.baseName.text == "R" {
-                let identifier = node.declName.baseName.text
-                let processed = stripSuffix(identifier, "image")
-                let replacement = parseExpr("ImageResource.\(processed)")
-                    .with(\.leadingTrivia, node.leadingTrivia)
-                    .with(\.trailingTrivia, node.trailingTrivia)
-                return ExprSyntax(replacement)
-            }
-
-            // Match R.color.<id>
-            if let mid = node.base?.as(MemberAccessExprSyntax.self),
-               mid.declName.baseName.text == "color",
-               let first = mid.base?.as(DeclReferenceExprSyntax.self),
-               first.baseName.text == "R" {
-                let identifier = node.declName.baseName.text
-                let processed = stripSuffix(identifier, "color")
-                let replacement = parseExpr("ColorResource.\(processed)")
+            // Standalone member uses: R.<kind>.<id> -> <ResourceType>Resource.<id>
+            if let (kind, identifier) = matchRKindIdentifier(from: node) {
+                let processed: String
+                let resourceType: String
+                switch kind {
+                case "image":
+                    processed = stripSuffix(identifier, "image")
+                    resourceType = "ImageResource"
+                case "color":
+                    processed = stripSuffix(identifier, "color")
+                    resourceType = "ColorResource"
+                default:
+                    return ExprSyntax(super.visit(node))
+                }
+                let replacement = parseExpr("\(resourceType).\(processed)")
                     .with(\.leadingTrivia, node.leadingTrivia)
                     .with(\.trailingTrivia, node.trailingTrivia)
                 return ExprSyntax(replacement)
@@ -134,52 +170,23 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             if !call.arguments.isEmpty { return nil }
 
             // Called expression could be either:
-            // A: R.image.<id>
-            // B: R.image.<id>.image
+            // A: R.<kind>.<id>
+            // B: R.<kind>.<id>.image (SwiftUI accessor)
             guard let called = call.calledExpression.as(MemberAccessExprSyntax.self) else { return nil }
 
-            // Try SwiftUI patterns first
-            // Image: ... .image() where base is R.image.<id>
-            if called.declName.baseName.text == "image",
+            // SwiftUI accessor case: `.image()` or `.color()` where base is R.<kind>.<id>
+            if (called.declName.baseName.text == "image" || called.declName.baseName.text == "color"),
                let idMember = called.base?.as(MemberAccessExprSyntax.self),
-               let mid = idMember.base?.as(MemberAccessExprSyntax.self),
-               mid.declName.baseName.text == "image",
-               let first = mid.base?.as(DeclReferenceExprSyntax.self),
-               first.baseName.text == "R" {
-                let identifier = idMember.declName.baseName.text
-                let processed = stripSuffix(identifier, "image")
-                didSwiftUIChange = true
-                return parseExpr("Image(.\(processed))")
-            }
-
-            // Color: ... .color() where base is R.color.<id>
-            if called.declName.baseName.text == "color",
-               let idMember = called.base?.as(MemberAccessExprSyntax.self),
-               let mid = idMember.base?.as(MemberAccessExprSyntax.self),
-               mid.declName.baseName.text == "color",
-               let first = mid.base?.as(DeclReferenceExprSyntax.self),
-               first.baseName.text == "R" {
-                let identifier = idMember.declName.baseName.text
-                let processed = stripSuffix(identifier, "color")
-                didSwiftUIChange = true
-                return parseExpr("Color(.\(processed))")
-            }
-
-            // UIKit patterns
-            if let lastMember = call.calledExpression.as(MemberAccessExprSyntax.self),
-               let mid = lastMember.base?.as(MemberAccessExprSyntax.self),
-               let first = mid.base?.as(DeclReferenceExprSyntax.self),
-               first.baseName.text == "R" {
-                let identifier = lastMember.declName.baseName.text
-                if mid.declName.baseName.text == "image" {
-                    let processed = stripSuffix(identifier, "image")
-                    didUIKitChange = true
-                    return parseExpr("UIImage(resource: .\(processed))")
-                } else if mid.declName.baseName.text == "color" {
-                    let processed = stripSuffix(identifier, "color")
-                    didUIKitChange = true
-                    return parseExpr("UIColor(resource: .\(processed))")
+               let match = matchRKindIdentifier(from: idMember) {
+                // Ensure accessor matches kind for safety
+                if let expr = swiftUIExpr(for: match.kind, identifier: match.identifier) {
+                    return expr
                 }
+            }
+
+            // Direct UIKit case: called expression is R.<kind>.<id>
+            if let match = matchRKindIdentifier(from: called) {
+                return uiKitExpr(for: match.kind, identifier: match.identifier)
             }
 
             return nil
@@ -258,3 +265,4 @@ private extension RToGeneratedAssetsRewriter {
         return false
     }
 }
+
