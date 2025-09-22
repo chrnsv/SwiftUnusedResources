@@ -72,11 +72,17 @@ private extension RToGeneratedStringsRewriter {
                 let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
                 let (catalog, identifier) = matchRStringCatalogIdentifier(from: calledExpr)
             {
+                // Build replacement preserving any existing arguments, e.g.
+                // R.string.<catalog>.<key>(args...) -> String(localized: .<catalog>.<key>(args...))
+                let argsText: String
                 if node.arguments.isEmpty {
-                    var replacement = ExprSyntax.parse("String(localized: .\(catalog).\(identifier))")
-                    replacement = applyTrivia(from: node, to: replacement)
-                    return replacement
+                    argsText = ""
+                } else {
+                    argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
                 }
+                var replacement = ExprSyntax.parse("String(localized: .\(catalog).\(identifier)\(argsText))")
+                replacement = applyTrivia(from: node, to: replacement)
+                return replacement
             }
             return super.visit(node)
         }
