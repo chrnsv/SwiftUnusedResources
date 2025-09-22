@@ -1,7 +1,6 @@
 import Foundation
 import SwiftParser
 import SwiftSyntax
-import Foundation
 
 public struct RToGeneratedStringsRewriter: Sendable {
     private let catalogs: Set<String>
@@ -62,7 +61,8 @@ private extension RToGeneratedStringsRewriter {
                 {
                     if node.arguments.isEmpty {
                         usedSwiftUI = true
-                        var replacement = ExprSyntax.parse("Text(.\(catalog).\(identifier))")
+                        let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
+                        var replacement = ExprSyntax.parse("Text(.\(qualifier)\(identifier))")
                         replacement = applyTrivia(from: node, to: replacement)
                         return replacement
                     }
@@ -80,7 +80,8 @@ private extension RToGeneratedStringsRewriter {
                 } else {
                     argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
                 }
-                var replacement = ExprSyntax.parse("String(localized: .\(catalog).\(identifier)\(argsText).with(locale: Locale(languageCode: \(language))))")
+                let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
+                var replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText).with(locale: Locale(languageCode: \(language))))")
                 replacement = applyTrivia(from: node, to: replacement)
                 return replacement
             }
@@ -97,7 +98,8 @@ private extension RToGeneratedStringsRewriter {
                 } else {
                     argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
                 }
-                var replacement = ExprSyntax.parse("String(localized: .\(catalog).\(identifier)\(argsText))")
+                let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
+                var replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText))")
                 replacement = applyTrivia(from: node, to: replacement)
                 return replacement
             }
