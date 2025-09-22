@@ -1,6 +1,7 @@
 import Foundation
 import SwiftParser
 import SwiftSyntax
+import Foundation
 
 public struct RToGeneratedStringsRewriter: Sendable {
     private let catalogs: Set<String>
@@ -70,6 +71,22 @@ private extension RToGeneratedStringsRewriter {
             
             if
                 let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
+                let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: calledExpr)
+            {
+                // Build replacement preserving any existing arguments
+                let argsText: String
+                if node.arguments.isEmpty {
+                    argsText = ""
+                } else {
+                    argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
+                }
+                var replacement = ExprSyntax.parse("String(localized: .\(catalog).\(identifier)\(argsText).with(locale: Locale(languageCode: \(language))))")
+                replacement = applyTrivia(from: node, to: replacement)
+                return replacement
+            }
+            
+            if
+                let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
                 let (catalog, identifier) = matchRStringCatalogIdentifier(from: calledExpr)
             {
                 // Build replacement preserving any existing arguments, e.g.
@@ -116,6 +133,43 @@ private extension RToGeneratedStringsRewriter {
 }
 
 private extension RToGeneratedStringsRewriter.Rewriter {
+    func matchRStringCatalogIdentifierAndPreferredLanguage(from member: MemberAccessExprSyntax) -> (catalog: String, identifier: String, languageExpr: String)? {
+        // Expect member like: R.string(preferredLanguages: <language>).<catalog>.<identifier>
+        guard
+            let mid = member.base?.as(MemberAccessExprSyntax.self),
+            let baseExpr = mid.base
+        else {
+            return nil
+        }
+        // baseExpr should be a call: R.string(preferredLanguages: ...)
+        guard
+            let call = baseExpr.as(FunctionCallExprSyntax.self),
+            let calledMember = call.calledExpression.as(MemberAccessExprSyntax.self),
+            let rBaseMember = calledMember.base?.as(MemberAccessExprSyntax.self),
+            let rDecl = rBaseMember.base?.as(DeclReferenceExprSyntax.self),
+            rDecl.baseName.text == "R",
+            calledMember.declName.baseName.text == "string"
+        else {
+            return nil
+        }
+        // Find preferredLanguages argument
+        guard let arg = call.arguments.first(where: { $0.label?.text == "preferredLanguages" }) else {
+            return nil
+        }
+        let languageExpr = arg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let catalog = mid.declName.baseName.text
+        let identifier = member.declName.baseName.text
+        
+        if !catalogs.contains(catalog.lowercased()) {
+            return nil
+        }
+        
+        print("Matched R.string(preferredLanguages: ...).\(catalog).\(identifier)")
+        
+        return (catalog.capitalizedFirstLetter(), identifier, languageExpr)
+    }
+    
     func matchRStringCatalogIdentifier(from member: MemberAccessExprSyntax) -> (catalog: String, identifier: String)? {
         // Expect member like: R.string.<catalog>.<identifier>
         guard
