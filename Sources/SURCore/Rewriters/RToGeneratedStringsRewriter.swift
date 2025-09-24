@@ -81,7 +81,7 @@ private extension RToGeneratedStringsRewriter {
                     argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
                 }
                 let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
-                var replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText).with(locale: Locale(languageCode: \(language))))")
+                var replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText).with(preferredLanguages: \(language)))")
                 replacement = applyTrivia(from: node, to: replacement)
                 return replacement
             }
@@ -147,13 +147,13 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         guard
             let call = baseExpr.as(FunctionCallExprSyntax.self),
             let calledMember = call.calledExpression.as(MemberAccessExprSyntax.self),
-            let rBaseMember = calledMember.base?.as(MemberAccessExprSyntax.self),
-            let rDecl = rBaseMember.base?.as(DeclReferenceExprSyntax.self),
+            let rDecl = calledMember.base?.as(DeclReferenceExprSyntax.self),
             rDecl.baseName.text == "R",
             calledMember.declName.baseName.text == "string"
         else {
             return nil
         }
+        
         // Find preferredLanguages argument
         guard let arg = call.arguments.first(where: { $0.label?.text == "preferredLanguages" }) else {
             return nil
