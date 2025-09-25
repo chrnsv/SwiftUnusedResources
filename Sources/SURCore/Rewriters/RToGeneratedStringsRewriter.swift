@@ -7,7 +7,6 @@ public struct RToGeneratedStringsRewriter: FileRewriter {
     
     public init(stringCatalogs: Set<String>) {
         self.catalogs = stringCatalogs
-        print("Using provided catalogs: \(catalogs)")
     }
     
     @discardableResult

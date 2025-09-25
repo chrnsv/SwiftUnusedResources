@@ -42,7 +42,7 @@ public struct RToGeneratedAssetsRewriter: FileRewriter {
             try newText.write(to: url, atomically: true, encoding: .utf8)
         }
         
-        return false
+        return true
     }
 }
 

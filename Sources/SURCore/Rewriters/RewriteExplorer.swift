@@ -176,7 +176,7 @@ public struct RewriteExplorer: Sendable {
                 }
                 .joined(separator: ", ")
                 
-                print("   • \(result.path) (\(changedTypes))")
+                print("   • \(result.path.lastComponent) (\(changedTypes))")
             }
         }
         
@@ -189,6 +189,8 @@ public struct RewriteExplorer: Sendable {
                 }
             }
         }
+        
+        print("")
     }
 }
 
