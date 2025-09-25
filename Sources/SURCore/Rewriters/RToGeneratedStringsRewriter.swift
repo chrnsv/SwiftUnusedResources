@@ -59,35 +59,23 @@ private extension RToGeneratedStringsRewriter {
             if let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self) {
                 if
                     calledExpr.declName.baseName.text == "text",
-                    let baseMember = calledExpr.base?.as(MemberAccessExprSyntax.self)
+                    let baseMember = calledExpr.base?.as(MemberAccessExprSyntax.self),
+                    let (catalog, identifier, language) = matchRStringCatalogIdentifier(from: baseMember)
                 {
-                    // Check for preferred languages pattern first
-                    if let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: baseMember) {
-                        return createExpression(
-                            type: .text,
-                            catalog: catalog,
-                            identifier: identifier,
-                            arguments: node.arguments,
-                            language: language,
-                            originalNode: node
-                        )
-                    }
-                    // Then check for regular pattern
-                    else if let (catalog, identifier) = matchRStringCatalogIdentifier(from: baseMember) {
-                        return createExpression(
-                            type: .text,
-                            catalog: catalog,
-                            identifier: identifier,
-                            arguments: node.arguments,
-                            originalNode: node
-                        )
-                    }
+                    return createExpression(
+                        type: .text,
+                        catalog: catalog,
+                        identifier: identifier,
+                        arguments: node.arguments,
+                        language: language,
+                        originalNode: node
+                    )
                 }
             }
             
             if
                 let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
-                let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: calledExpr)
+                let (catalog, identifier, language) = matchRStringCatalogIdentifier(from: calledExpr)
             {
                 return createExpression(
                     type: .stringLocalized,
@@ -95,19 +83,6 @@ private extension RToGeneratedStringsRewriter {
                     identifier: identifier,
                     arguments: node.arguments,
                     language: language,
-                    originalNode: node
-                )
-            }
-            
-            if
-                let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
-                let (catalog, identifier) = matchRStringCatalogIdentifier(from: calledExpr)
-            {
-                return createExpression(
-                    type: .stringLocalized,
-                    catalog: catalog,
-                    identifier: identifier,
-                    arguments: node.arguments,
                     originalNode: node
                 )
             }
@@ -142,69 +117,50 @@ private extension RToGeneratedStringsRewriter {
 }
 
 private extension RToGeneratedStringsRewriter.Rewriter {
-    func matchRStringCatalogIdentifierAndPreferredLanguage(
+    func matchRStringCatalogIdentifier(
         from member: MemberAccessExprSyntax
-    ) -> (catalog: String, identifier: String, languageExpr: String)? {
-        // Expect member like: R.string(preferredLanguages: <language>).<catalog>.<identifier>
+    ) -> (catalog: String, identifier: String, language: String?)? {
         guard
-            let mid = member.base?.as(MemberAccessExprSyntax.self),
-            let baseExpr = mid.base
+            let mid = member.base?.as(MemberAccessExprSyntax.self)
         else {
             return nil
         }
-        // baseExpr should be a call: R.string(preferredLanguages: ...)
-        guard
+        
+        let catalog = mid.declName.baseName.text
+        let identifier = member.declName.baseName.text
+        
+        // Check if catalog is valid
+        if !catalogs.contains(catalog.lowercased()) {
+            return nil
+        }
+        
+        // Check for R.string(preferredLanguages: ...).<catalog>.<identifier> pattern
+        if
+            let baseExpr = mid.base,
             let call = baseExpr.as(FunctionCallExprSyntax.self),
             let calledMember = call.calledExpression.as(MemberAccessExprSyntax.self),
             let rDecl = calledMember.base?.as(DeclReferenceExprSyntax.self),
             rDecl.baseName.text == "R",
-            calledMember.declName.baseName.text == "string"
-        else {
-            return nil
+            calledMember.declName.baseName.text == "string",
+            let arg = call.arguments.first(where: { $0.label?.text == "preferredLanguages" })
+        {
+            let languageExpr = arg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            print("Matched R.string(preferredLanguages: ...).\(catalog).\(identifier)")
+            return (catalog.capitalizedFirstLetter(), identifier, languageExpr)
         }
         
-        // Find preferredLanguages argument
-        guard let arg = call.arguments.first(where: { $0.label?.text == "preferredLanguages" }) else {
-            return nil
-        }
-        let languageExpr = arg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        let catalog = mid.declName.baseName.text
-        let identifier = member.declName.baseName.text
-        
-        if !catalogs.contains(catalog.lowercased()) {
-            return nil
-        }
-        
-        print("Matched R.string(preferredLanguages: ...).\(catalog).\(identifier)")
-        
-        return (catalog.capitalizedFirstLetter(), identifier, languageExpr)
-    }
-    
-    func matchRStringCatalogIdentifier(
-        from member: MemberAccessExprSyntax
-    ) -> (catalog: String, identifier: String)? {
-        // Expect member like: R.string.<catalog>.<identifier>
-        guard
-            let mid = member.base?.as(MemberAccessExprSyntax.self),
+        // Check for R.string.<catalog>.<identifier> pattern
+        if
             let base = mid.base?.as(MemberAccessExprSyntax.self),
             let declRef = base.base?.as(DeclReferenceExprSyntax.self),
             declRef.baseName.text == "R",
             base.declName.baseName.text == "string"
-        else {
-            return nil
+        {
+            print("Matched R.string.\(catalog).\(identifier)")
+            return (catalog.capitalizedFirstLetter(), identifier, nil)
         }
         
-        let catalog = mid.declName.baseName.text
-        let identifier = member.declName.baseName.text
-        
-        if !catalogs.contains(catalog.lowercased()) {
-            return nil
-        }
-        
-        print("Matched R.string.\(catalog).\(identifier)")
-        
-        return (catalog.capitalizedFirstLetter(), identifier)
+        return nil
     }
     
     private func createExpression(
@@ -227,7 +183,8 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         
         if let language {
             finalExpression = "\(baseExpression).with(preferredLanguages: \(language))"
-        } else {
+        }
+        else {
             finalExpression = baseExpression
         }
         
@@ -271,10 +228,8 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         
         var prefix: String {
             switch self {
-            case .text:
-                return "Text("
-            case .stringLocalized:
-                return "String(localized: "
+            case .text: "Text("
+            case .stringLocalized: "String(localized: "
             }
         }
     }
