@@ -10,17 +10,6 @@ public struct RToGeneratedStringsRewriter: Sendable {
         print("Catalogs found: \(catalogs)")
     }
     
-    private static func findXCStringsCatalogs(in projectURL: URL) -> Set<String> {
-        guard let enumerator = FileManager.default.enumerator(at: projectURL, includingPropertiesForKeys: nil)
-        else { return [] }
-        
-        var catalogs = Set<String>()
-        for case let fileURL as URL in enumerator where fileURL.pathExtension == "xcstrings" {
-            catalogs.insert(fileURL.deletingPathExtension().lastPathComponent.lowercased())
-        }
-        return catalogs
-    }
-    
     @discardableResult
     public func rewrite(fileAt fileURL: URL) throws -> Bool {
         let original = try String(contentsOf: fileURL)
@@ -43,6 +32,19 @@ public struct RToGeneratedStringsRewriter: Sendable {
 }
 
 private extension RToGeneratedStringsRewriter {
+    static func findXCStringsCatalogs(in projectURL: URL) -> Set<String> {
+        guard let enumerator = FileManager.default.enumerator(at: projectURL, includingPropertiesForKeys: nil)
+        else { return [] }
+        
+        var catalogs = Set<String>()
+        for case let fileURL as URL in enumerator where fileURL.pathExtension == "xcstrings" {
+            catalogs.insert(fileURL.deletingPathExtension().lastPathComponent.lowercased())
+        }
+        return catalogs
+    }
+}
+
+private extension RToGeneratedStringsRewriter {
     final class Rewriter: SyntaxRewriter {
         let catalogs: Set<String>
         private(set) var usedSwiftUI = false
@@ -57,11 +59,26 @@ private extension RToGeneratedStringsRewriter {
             if let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self) {
                 if
                     calledExpr.declName.baseName.text == "text",
-                    let baseMember = calledExpr.base?.as(MemberAccessExprSyntax.self),
-                    let (catalog, identifier) = matchRStringCatalogIdentifier(from: baseMember)
+                    let baseMember = calledExpr.base?.as(MemberAccessExprSyntax.self)
                 {
-                    if node.arguments.isEmpty {
-                        return createTextExpression(catalog: catalog, identifier: identifier, originalNode: node)
+                    // Check for preferred languages pattern first
+                    if let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: baseMember) {
+                        return createTextWithPreferredLanguagesExpression(
+                            catalog: catalog,
+                            identifier: identifier,
+                            language: language,
+                            arguments: node.arguments,
+                            originalNode: node
+                        )
+                    }
+                    // Then check for regular pattern
+                    else if let (catalog, identifier) = matchRStringCatalogIdentifier(from: baseMember) {
+                        return createTextExpression(
+                            catalog: catalog,
+                            identifier: identifier,
+                            arguments: node.arguments,
+                            originalNode: node
+                        )
                     }
                 }
             }
@@ -189,11 +206,13 @@ private extension RToGeneratedStringsRewriter.Rewriter {
     private func createTextExpression(
         catalog: String,
         identifier: String,
+        arguments: LabeledExprListSyntax,
         originalNode: some SyntaxProtocol
     ) -> ExprSyntax {
         usedSwiftUI = true
+        let argsText = formatArguments(arguments)
         let qualifier = createQualifier(for: catalog)
-        let replacement = ExprSyntax.parse("Text(.\(qualifier)\(identifier))")
+        let replacement = ExprSyntax.parse("Text(.\(qualifier)\(identifier)\(argsText))")
         return applyTrivia(from: originalNode, to: replacement)
     }
     
@@ -219,6 +238,20 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         let argsText = formatArguments(arguments)
         let qualifier = createQualifier(for: catalog)
         let replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText).with(preferredLanguages: \(language)))")
+        return applyTrivia(from: originalNode, to: replacement)
+    }
+    
+    private func createTextWithPreferredLanguagesExpression(
+        catalog: String,
+        identifier: String,
+        language: String,
+        arguments: LabeledExprListSyntax,
+        originalNode: some SyntaxProtocol
+    ) -> ExprSyntax {
+        usedSwiftUI = true
+        let argsText = formatArguments(arguments)
+        let qualifier = createQualifier(for: catalog)
+        let replacement = ExprSyntax.parse("Text(.\(qualifier)\(identifier)\(argsText).with(preferredLanguages: \(language)))")
         return applyTrivia(from: originalNode, to: replacement)
     }
     
