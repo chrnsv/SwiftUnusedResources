@@ -56,38 +56,38 @@ private extension RToGeneratedStringsRewriter {
         }
         
         override func visit(_ node: FunctionCallExprSyntax) -> ExprSyntax {
-            if let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self) {
-                if
-                    calledExpr.declName.baseName.text == "text",
-                    let baseMember = calledExpr.base?.as(MemberAccessExprSyntax.self),
-                    let (catalog, identifier, language) = matchRStringCatalogIdentifier(from: baseMember)
-                {
-                    return createExpression(
-                        type: .text,
-                        catalog: catalog,
-                        identifier: identifier,
-                        arguments: node.arguments,
-                        language: language,
-                        originalNode: node
-                    )
-                }
+            guard let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self) else {
+                return super.visit(node)
             }
+            
+            // Determine expression type and target member to analyze
+            let (expressionType, targetMember): (ExpressionType, MemberAccessExprSyntax)
             
             if
-                let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
-                let (catalog, identifier, language) = matchRStringCatalogIdentifier(from: calledExpr)
+                calledExpr.declName.baseName.text == "text",
+                let baseMember = calledExpr.base?.as(MemberAccessExprSyntax.self)
             {
-                return createExpression(
-                    type: .stringLocalized,
-                    catalog: catalog,
-                    identifier: identifier,
-                    arguments: node.arguments,
-                    language: language,
-                    originalNode: node
-                )
+                // Handle .text() calls: R.string.<catalog>.<identifier>.text()
+                (expressionType, targetMember) = (.text, baseMember)
+            }
+            else {
+                // Handle direct R.string calls: R.string.<catalog>.<identifier>()
+                (expressionType, targetMember) = (.stringLocalized, calledExpr)
             }
             
-            return super.visit(node)
+            // Try to match and transform R.string pattern
+            guard let (catalog, identifier, language) = matchRStringCatalogIdentifier(from: targetMember) else {
+                return super.visit(node)
+            }
+            
+            return createExpression(
+                type: expressionType,
+                catalog: catalog,
+                identifier: identifier,
+                arguments: node.arguments,
+                language: language,
+                originalNode: node
+            )
         }
         
         override func visit(_ node: OptionalChainingExprSyntax) -> ExprSyntax {
