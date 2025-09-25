@@ -39,8 +39,11 @@ enum ImportHelpers {
             }
         }
         
-        let newStatements = file.statements.inserting(importItem, at: insertIndex)
-        return file.with(\.statements, newStatements)
+        // Create new statements array by inserting the import at the correct position
+        var newStatements = Array(file.statements)
+        newStatements.insert(importItem, at: insertIndex)
+        let newStatementsCollection = CodeBlockItemListSyntax(newStatements)
+        return file.with(\.statements, newStatementsCollection)
     }
     
     static func lastImportInsertionIndex(in file: SourceFileSyntax) -> Int {
