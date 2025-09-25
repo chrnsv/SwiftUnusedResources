@@ -13,9 +13,8 @@ import SURCore
 
 struct RewriteCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "sur-rewrite",
-        abstract: "Rewrite R.swift usage to generated localization symbols",
-        version: "1.0.0"
+        commandName: "r-to-xcode",
+        abstract: "Rewrite R.swift usage to generated localization symbols"
     )
     
     @Argument(help: "Path to the Xcode project (.xcodeproj)")
