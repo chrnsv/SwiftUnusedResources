@@ -264,39 +264,20 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         return "(" + arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
     }
     
+    /// Applies leading and trailing trivia (whitespace, comments, etc.) from the original syntax node to the new expression.
+    /// This preserves the formatting and comments from the original code in the rewritten expression.
+    ///
+    /// - Parameters:
+    ///   - original: The original syntax node to copy trivia from
+    ///   - expr: The new expression to apply trivia to
+    /// - Returns: The expression with applied trivia
     private func applyTrivia(
         from original: some SyntaxProtocol,
         to expr: ExprSyntax
     ) -> ExprSyntax {
-        let leading = original.leadingTrivia
-        let trailing = original.trailingTrivia
-        
-        if var call = expr.as(FunctionCallExprSyntax.self) {
-            call = call
-                .with(\.leadingTrivia, leading)
-                .with(\.trailingTrivia, trailing)
-            
-            return ExprSyntax(call)
-        }
-        
-        if var member = expr.as(MemberAccessExprSyntax.self) {
-            member = member
-                .with(\.leadingTrivia, leading)
-                .with(\.trailingTrivia, trailing)
-            
-            return ExprSyntax(member)
-        }
-        
-        if var declRef = expr.as(DeclReferenceExprSyntax.self) {
-            declRef = declRef
-                .with(\.leadingTrivia, leading)
-                .with(\.trailingTrivia, trailing)
-            
-            return ExprSyntax(declRef)
-        }
-        
-        // Fallback: return as-is if we can't set trivia
-        return expr
+        expr
+            .with(\.leadingTrivia, original.leadingTrivia)
+            .with(\.trailingTrivia, original.trailingTrivia)
     }
 }
 
