@@ -12,6 +12,11 @@ public struct RToGeneratedStringsRewriter: Sendable {
     
     @discardableResult
     public func rewrite(fileAt fileURL: URL) throws -> Bool {
+        return try rewrite(fileAt: fileURL, dryRun: false)
+    }
+    
+    @discardableResult
+    public func rewrite(fileAt fileURL: URL, dryRun: Bool) throws -> Bool {
         let original = try String(contentsOf: fileURL)
         let sourceFile = Parser.parse(source: original)
         
@@ -26,7 +31,11 @@ public struct RToGeneratedStringsRewriter: Sendable {
         guard rewrittenString != original else {
             return false
         }
-        try rewrittenString.write(to: fileURL, atomically: true, encoding: .utf8)
+        
+        if !dryRun {
+            try rewrittenString.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+        
         return true
     }
 }
