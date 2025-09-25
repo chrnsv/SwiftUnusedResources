@@ -2,13 +2,13 @@ import Foundation
 import SwiftParser
 import SwiftSyntax
 
-public struct RToGeneratedAssetsRewriter: Sendable {
+public struct RToGeneratedAssetsRewriter: FileRewriter {
     public init() {}
-
+    
     /// Rewrites the given Swift source file in-place.
     /// - Returns: true if the file changed.
     @discardableResult
-    public func rewrite(fileAt url: URL) throws -> Bool {
+    public func rewrite(fileAt url: URL, dryRun: Bool) throws -> Bool {
         let original = try String(contentsOf: url)
         let source = Parser.parse(source: original)
         let rewriter = Rewriter()
@@ -33,10 +33,13 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         }
 
         let newText = transformed.description
-
-        if newText != original {
+        
+        guard newText != original else {
+            return false
+        }
+        
+        if !dryRun {
             try newText.write(to: url, atomically: true, encoding: .utf8)
-            return true
         }
         
         return false

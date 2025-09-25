@@ -7,24 +7,19 @@
 
 import Foundation
 import Glob
-import PathKit
+@preconcurrency import PathKit
 import Rainbow
 import XcodeProj
 
 /// Discovers and processes files for rewriting R.swift usage to generated localization symbols
-public final class RewriteExplorer {
+public struct RewriteExplorer: Sendable {
     private let projectPath: Path
     private let sourceRoot: Path
     private let target: String?
     private let showWarnings: Bool
     private let excludedSources: [Path]
     private let dryRun: Bool
-    
-    /// Supported rewriter types
-    public enum RewriterType {
-        case strings
-        case assets
-    }
+    private let stringCatalogs: Set<String>
     
     public init(
         projectPath: Path,
@@ -40,6 +35,13 @@ public final class RewriteExplorer {
         self.showWarnings = showWarnings
         self.excludedSources = excludedSources
         self.dryRun = dryRun
+        
+        // Find string catalogs once during initialization
+        self.stringCatalogs = Self.findXCStringsCatalogs(in: projectPath.url)
+        
+        if showWarnings && !stringCatalogs.isEmpty {
+            print("📚 Found string catalogs: \(stringCatalogs.joined(separator: ", "))")
+        }
     }
     
     /// Explore and rewrite files in the project
@@ -101,7 +103,7 @@ public final class RewriteExplorer {
         let rewriteResults = try await withThrowingTaskGroup(of: RewriteResult.self) { group in
             files.forEach { path in
                 group.addTask { @Sendable [projectPath, dryRun, showWarnings] in
-                    try await self.rewriteFile(
+                    try await rewriteFile(
                         at: path,
                         projectPath: projectPath,
                         rewriterTypes: rewriterTypes,
@@ -130,17 +132,18 @@ public final class RewriteExplorer {
         
         for rewriterType in rewriterTypes {
             do {
-                let rewriter = try createRewriter(type: rewriterType, projectPath: projectPath)
+                let rewriter = try createRewriter(type: rewriterType)
                 let hasChanges = try rewriter.rewrite(fileAt: path.url, dryRun: dryRun)
                 changes[rewriterType] = hasChanges
                 
                 if hasChanges && showWarnings {
-                    print("✏️  Rewritten \(rewriterType): \(path.relativePath)")
+                    print("✏️  Rewritten \(rewriterType): \(path)")
                 }
-            } catch {
+            }
+            catch {
                 errors[rewriterType] = error
                 if showWarnings {
-                    print("❌ Error rewriting \(path.relativePath) with \(rewriterType): \(error)")
+                    print("❌ Error rewriting \(path) with \(rewriterType): \(error)")
                 }
             }
         }
@@ -148,12 +151,10 @@ public final class RewriteExplorer {
         return RewriteResult(path: path, changes: changes, errors: errors)
     }
     
-    private func createRewriter(type: RewriterType, projectPath: Path) throws -> any FileRewriter {
+    private func createRewriter(type: RewriterType) throws -> any FileRewriter {
         switch type {
-        case .strings:
-            return RToGeneratedStringsRewriter(projectAt: projectPath.url)
-        case .assets:
-            return RToGeneratedAssetsRewriter(projectAt: projectPath.url)
+        case .strings: RToGeneratedStringsRewriter(stringCatalogs: stringCatalogs)
+        case .assets: RToGeneratedAssetsRewriter()
         }
     }
     
@@ -172,15 +173,17 @@ public final class RewriteExplorer {
             for result in modifiedFiles {
                 let changedTypes = result.changes.compactMap { type, changed in
                     changed ? type.description : nil
-                }.joined(separator: ", ")
-                print("   • \(result.path.relativePath) (\(changedTypes))")
+                }
+                .joined(separator: ", ")
+                
+                print("   • \(result.path) (\(changedTypes))")
             }
         }
         
         if !errorFiles.isEmpty {
             print("\n🚨 Files with errors:".red.bold)
             for result in errorFiles {
-                print("   • \(result.path.relativePath)")
+                print("   • \(result.path)")
                 for (type, error) in result.errors {
                     print("     └─ \(type): \(error.localizedDescription)")
                 }
@@ -189,11 +192,35 @@ public final class RewriteExplorer {
     }
 }
 
+extension RewriteExplorer {
+    /// Supported rewriter types
+    public enum RewriterType: Sendable {
+        case strings
+        case assets
+    }
+}
+
+extension RewriteExplorer {
+    /// Find XCStrings catalogs in the project
+    private static func findXCStringsCatalogs(in projectURL: URL) -> Set<String> {
+        let projectPath = Path(projectURL.path)
+        let catalogPattern = projectPath.string + "**/*.xcstrings"
+        
+        var catalogs = Set<String>()
+        for catalogPath in Glob(pattern: catalogPattern) {
+            let path = Path(catalogPath)
+            let catalogName = path.lastComponentWithoutExtension.lowercased()
+            catalogs.insert(catalogName)
+        }
+        
+        return catalogs
+    }
+}
+
 // MARK: - Supporting Types
 
 /// Protocol for file rewriters
-public protocol FileRewriter {
-    init(projectAt projectURL: URL) throws
+public protocol FileRewriter: Sendable {
     func rewrite(fileAt fileURL: URL, dryRun: Bool) throws -> Bool
 }
 
@@ -219,12 +246,4 @@ extension RewriteExplorer.RewriterType: CustomStringConvertible {
         case .assets: return "assets"
         }
     }
-}
-
-extension RToGeneratedStringsRewriter: FileRewriter {
-    // FileRewriter conformance is provided by the dryRun method we added
-}
-
-extension RToGeneratedAssetsRewriter: FileRewriter {
-    // FileRewriter conformance would need to be added to RToGeneratedAssetsRewriter
 }

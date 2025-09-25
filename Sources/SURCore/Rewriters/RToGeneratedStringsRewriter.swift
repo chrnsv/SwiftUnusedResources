@@ -2,17 +2,17 @@ import Foundation
 import SwiftParser
 import SwiftSyntax
 
-public struct RToGeneratedStringsRewriter: Sendable {
+public struct RToGeneratedStringsRewriter: FileRewriter {
     private let catalogs: Set<String>
     
-    public init(projectAt projectURL: URL) {
-        catalogs = Self.findXCStringsCatalogs(in: projectURL)
-        print("Catalogs found: \(catalogs)")
+    public init(stringCatalogs: Set<String>) {
+        self.catalogs = stringCatalogs
+        print("Using provided catalogs: \(catalogs)")
     }
     
     @discardableResult
     public func rewrite(fileAt fileURL: URL) throws -> Bool {
-        return try rewrite(fileAt: fileURL, dryRun: false)
+        try rewrite(fileAt: fileURL, dryRun: false)
     }
     
     @discardableResult
@@ -37,19 +37,6 @@ public struct RToGeneratedStringsRewriter: Sendable {
         }
         
         return true
-    }
-}
-
-private extension RToGeneratedStringsRewriter {
-    static func findXCStringsCatalogs(in projectURL: URL) -> Set<String> {
-        guard let enumerator = FileManager.default.enumerator(at: projectURL, includingPropertiesForKeys: nil)
-        else { return [] }
-        
-        var catalogs = Set<String>()
-        for case let fileURL as URL in enumerator where fileURL.pathExtension == "xcstrings" {
-            catalogs.insert(fileURL.deletingPathExtension().lastPathComponent.lowercased())
-        }
-        return catalogs
     }
 }
 

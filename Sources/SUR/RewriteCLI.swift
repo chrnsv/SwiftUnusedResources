@@ -9,8 +9,8 @@ import Foundation
 import ArgumentParser
 import PathKit
 import Rainbow
+import SURCore
 
-@main
 struct RewriteCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "sur-rewrite",
@@ -97,7 +97,7 @@ struct RewriteCLI: AsyncParsableCommand {
     }
 }
 
-extension ValidationError: LocalizedError {
+extension ValidationError: @retroactive LocalizedError {
     public var errorDescription: String? {
         return message
     }
