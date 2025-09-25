@@ -6,8 +6,8 @@
 //
 
 import Foundation
-import SwiftSyntax
 import SwiftParser
+import SwiftSyntax
 
 enum ImportHelpers {
     static func hasImport(named module: String, in file: SourceFileSyntax) -> Bool {

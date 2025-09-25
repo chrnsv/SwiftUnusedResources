@@ -180,7 +180,6 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
         let resource = kind.resource(for: module, with: identifier.withoutImageAndColor())
         return .parse(resource)
     }
-    
 }
 
 private enum Kind: String {

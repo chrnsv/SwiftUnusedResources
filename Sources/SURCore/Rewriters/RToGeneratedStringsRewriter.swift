@@ -63,11 +63,11 @@ private extension RToGeneratedStringsRewriter {
                 {
                     // Check for preferred languages pattern first
                     if let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: baseMember) {
-                        return createTextWithPreferredLanguagesExpression(
+                        return createTextExpression(
                             catalog: catalog,
                             identifier: identifier,
-                            language: language,
                             arguments: node.arguments,
+                            language: language,
                             originalNode: node
                         )
                     }
@@ -87,11 +87,11 @@ private extension RToGeneratedStringsRewriter {
                 let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
                 let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: calledExpr)
             {
-                return createStringLocalizedWithPreferredLanguagesExpression(
+                return createStringLocalizedExpression(
                     catalog: catalog,
                     identifier: identifier,
-                    language: language,
                     arguments: node.arguments,
+                    language: language,
                     originalNode: node
                 )
             }
@@ -207,12 +207,24 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         catalog: String,
         identifier: String,
         arguments: LabeledExprListSyntax,
+        language: String? = nil,
         originalNode: some SyntaxProtocol
     ) -> ExprSyntax {
         usedSwiftUI = true
         let argsText = formatArguments(arguments)
         let qualifier = createQualifier(for: catalog)
-        let replacement = ExprSyntax.parse("Text(.\(qualifier)\(identifier)\(argsText))")
+        
+        let baseExpression = "Text(.\(qualifier)\(identifier)\(argsText))"
+        let finalExpression: String
+        
+        if let language {
+            finalExpression = "\(baseExpression).with(preferredLanguages: \(language))"
+        }
+        else {
+            finalExpression = baseExpression
+        }
+        
+        let replacement = ExprSyntax.parse(finalExpression)
         return applyTrivia(from: originalNode, to: replacement)
     }
     
@@ -220,38 +232,23 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         catalog: String,
         identifier: String,
         arguments: LabeledExprListSyntax,
+        language: String? = nil,
         originalNode: some SyntaxProtocol
     ) -> ExprSyntax {
         let argsText = formatArguments(arguments)
         let qualifier = createQualifier(for: catalog)
-        let replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText))")
-        return applyTrivia(from: originalNode, to: replacement)
-    }
-    
-    private func createStringLocalizedWithPreferredLanguagesExpression(
-        catalog: String,
-        identifier: String,
-        language: String,
-        arguments: LabeledExprListSyntax,
-        originalNode: some SyntaxProtocol
-    ) -> ExprSyntax {
-        let argsText = formatArguments(arguments)
-        let qualifier = createQualifier(for: catalog)
-        let replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText).with(preferredLanguages: \(language)))")
-        return applyTrivia(from: originalNode, to: replacement)
-    }
-    
-    private func createTextWithPreferredLanguagesExpression(
-        catalog: String,
-        identifier: String,
-        language: String,
-        arguments: LabeledExprListSyntax,
-        originalNode: some SyntaxProtocol
-    ) -> ExprSyntax {
-        usedSwiftUI = true
-        let argsText = formatArguments(arguments)
-        let qualifier = createQualifier(for: catalog)
-        let replacement = ExprSyntax.parse("Text(.\(qualifier)\(identifier)\(argsText).with(preferredLanguages: \(language)))")
+        
+        let baseExpression = "String(localized: .\(qualifier)\(identifier)\(argsText))"
+        let finalExpression: String
+        
+        if let language {
+            finalExpression = "\(baseExpression).with(preferredLanguages: \(language))"
+        }
+        else {
+            finalExpression = baseExpression
+        }
+        
+        let replacement = ExprSyntax.parse(finalExpression)
         return applyTrivia(from: originalNode, to: replacement)
     }
     
