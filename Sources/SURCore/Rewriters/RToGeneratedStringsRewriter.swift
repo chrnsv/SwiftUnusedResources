@@ -91,26 +91,28 @@ private extension RToGeneratedStringsRewriter {
         }
         
         override func visit(_ node: OptionalChainingExprSyntax) -> ExprSyntax {
-            // Handle optional chaining around calls to R.string or text()
-            if let wrappedCall = node.expression.as(FunctionCallExprSyntax.self) {
-                let rewrittenCall = visit(wrappedCall)
-                if rewrittenCall != ExprSyntax(wrappedCall) {
-                    // Return rewritten call without optional chaining, preserving trivia
-                    return applyTrivia(from: node, to: rewrittenCall)
-                }
+            // Handle optional chaining around R.string calls
+            // Since String(localized:) and Text() don't return optionals, ? can be safely removed
+            let rewrittenExpression = visit(node.expression)
+            
+            if rewrittenExpression != node.expression {
+                // R.string was transformed, remove optional chaining and preserve trivia
+                return applyTrivia(from: node, to: rewrittenExpression)
             }
+            
             return super.visit(node)
         }
         
         override func visit(_ node: ForceUnwrapExprSyntax) -> ExprSyntax {
-            // Handle force unwrap around calls to R.string or text()
-            if let wrappedCall = node.expression.as(FunctionCallExprSyntax.self) {
-                let rewrittenCall = visit(wrappedCall)
-                if rewrittenCall != ExprSyntax(wrappedCall) {
-                    // Return rewritten call without force unwrap, preserving trivia
-                    return applyTrivia(from: node, to: rewrittenCall)
-                }
+            // Handle force unwrap around R.string calls  
+            // Since String(localized:) and Text() don't return optionals, ! can be safely removed
+            let rewrittenExpression = visit(node.expression)
+            
+            if rewrittenExpression != node.expression {
+                // R.string was transformed, remove force unwrap and preserve trivia
+                return applyTrivia(from: node, to: rewrittenExpression)
             }
+            
             return super.visit(node)
         }
     }
