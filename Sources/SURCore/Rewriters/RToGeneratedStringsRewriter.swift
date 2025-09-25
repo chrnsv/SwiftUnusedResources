@@ -6,17 +6,19 @@ public struct RToGeneratedStringsRewriter: Sendable {
     private let catalogs: Set<String>
     
     public init(projectAt projectURL: URL) {
-        catalogs = {
-            guard let enumerator = FileManager.default.enumerator(at: projectURL, includingPropertiesForKeys: nil)
-            else { return [] }
-            var catalogs = Set<String>()
-            for case let fileURL as URL in enumerator where fileURL.pathExtension == "xcstrings" {
-                catalogs.insert(fileURL.deletingPathExtension().lastPathComponent.lowercased())
-            }
-            return catalogs
-        }()
-        
+        catalogs = Self.findXCStringsCatalogs(in: projectURL)
         print("Catalogs found: \(catalogs)")
+    }
+    
+    private static func findXCStringsCatalogs(in projectURL: URL) -> Set<String> {
+        guard let enumerator = FileManager.default.enumerator(at: projectURL, includingPropertiesForKeys: nil)
+        else { return [] }
+        
+        var catalogs = Set<String>()
+        for case let fileURL as URL in enumerator where fileURL.pathExtension == "xcstrings" {
+            catalogs.insert(fileURL.deletingPathExtension().lastPathComponent.lowercased())
+        }
+        return catalogs
     }
     
     @discardableResult
@@ -59,11 +61,7 @@ private extension RToGeneratedStringsRewriter {
                     let (catalog, identifier) = matchRStringCatalogIdentifier(from: baseMember)
                 {
                     if node.arguments.isEmpty {
-                        usedSwiftUI = true
-                        let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
-                        var replacement = ExprSyntax.parse("Text(.\(qualifier)\(identifier))")
-                        replacement = applyTrivia(from: node, to: replacement)
-                        return replacement
+                        return createTextExpression(catalog: catalog, identifier: identifier, originalNode: node)
                     }
                 }
             }
@@ -72,38 +70,27 @@ private extension RToGeneratedStringsRewriter {
                 let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
                 let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: calledExpr)
             {
-                // Build replacement preserving any existing arguments
-                let argsText: String
-                if node.arguments.isEmpty {
-                    argsText = ""
-                }
-                else {
-                    argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
-                }
-                let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
-                var replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText).with(preferredLanguages: \(language)))")
-                replacement = applyTrivia(from: node, to: replacement)
-                return replacement
+                return createStringLocalizedWithPreferredLanguagesExpression(
+                    catalog: catalog,
+                    identifier: identifier,
+                    language: language,
+                    arguments: node.arguments,
+                    originalNode: node
+                )
             }
             
             if
                 let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
                 let (catalog, identifier) = matchRStringCatalogIdentifier(from: calledExpr)
             {
-                // Build replacement preserving any existing arguments, e.g.
-                // R.string.<catalog>.<key>(args...) -> String(localized: .<catalog>.<key>(args...))
-                let argsText: String
-                if node.arguments.isEmpty {
-                    argsText = ""
-                }
-                else {
-                    argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
-                }
-                let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
-                var replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText))")
-                replacement = applyTrivia(from: node, to: replacement)
-                return replacement
+                return createStringLocalizedExpression(
+                    catalog: catalog,
+                    identifier: identifier,
+                    arguments: node.arguments,
+                    originalNode: node
+                )
             }
+            
             return super.visit(node)
         }
         
@@ -113,8 +100,7 @@ private extension RToGeneratedStringsRewriter {
                 let rewrittenCall = visit(wrappedCall)
                 if rewrittenCall != ExprSyntax(wrappedCall) {
                     // Return rewritten call without optional chaining, preserving trivia
-                    let withTrivia = applyTrivia(from: node, to: rewrittenCall)
-                    return withTrivia
+                    return applyTrivia(from: node, to: rewrittenCall)
                 }
             }
             return super.visit(node)
@@ -126,8 +112,7 @@ private extension RToGeneratedStringsRewriter {
                 let rewrittenCall = visit(wrappedCall)
                 if rewrittenCall != ExprSyntax(wrappedCall) {
                     // Return rewritten call without force unwrap, preserving trivia
-                    let withTrivia = applyTrivia(from: node, to: rewrittenCall)
-                    return withTrivia
+                    return applyTrivia(from: node, to: rewrittenCall)
                 }
             }
             return super.visit(node)
@@ -136,7 +121,9 @@ private extension RToGeneratedStringsRewriter {
 }
 
 private extension RToGeneratedStringsRewriter.Rewriter {
-    func matchRStringCatalogIdentifierAndPreferredLanguage(from member: MemberAccessExprSyntax) -> (catalog: String, identifier: String, languageExpr: String)? {
+    func matchRStringCatalogIdentifierAndPreferredLanguage(
+        from member: MemberAccessExprSyntax
+    ) -> (catalog: String, identifier: String, languageExpr: String)? {
         // Expect member like: R.string(preferredLanguages: <language>).<catalog>.<identifier>
         guard
             let mid = member.base?.as(MemberAccessExprSyntax.self),
@@ -173,7 +160,9 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         return (catalog.capitalizedFirstLetter(), identifier, languageExpr)
     }
     
-    func matchRStringCatalogIdentifier(from member: MemberAccessExprSyntax) -> (catalog: String, identifier: String)? {
+    func matchRStringCatalogIdentifier(
+        from member: MemberAccessExprSyntax
+    ) -> (catalog: String, identifier: String)? {
         // Expect member like: R.string.<catalog>.<identifier>
         guard
             let mid = member.base?.as(MemberAccessExprSyntax.self),
@@ -197,7 +186,58 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         return (catalog.capitalizedFirstLetter(), identifier)
     }
     
-    private func applyTrivia(from original: some SyntaxProtocol, to expr: ExprSyntax) -> ExprSyntax {
+    private func createTextExpression(
+        catalog: String,
+        identifier: String,
+        originalNode: some SyntaxProtocol
+    ) -> ExprSyntax {
+        usedSwiftUI = true
+        let qualifier = createQualifier(for: catalog)
+        let replacement = ExprSyntax.parse("Text(.\(qualifier)\(identifier))")
+        return applyTrivia(from: originalNode, to: replacement)
+    }
+    
+    private func createStringLocalizedExpression(
+        catalog: String,
+        identifier: String,
+        arguments: LabeledExprListSyntax,
+        originalNode: some SyntaxProtocol
+    ) -> ExprSyntax {
+        let argsText = formatArguments(arguments)
+        let qualifier = createQualifier(for: catalog)
+        let replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText))")
+        return applyTrivia(from: originalNode, to: replacement)
+    }
+    
+    private func createStringLocalizedWithPreferredLanguagesExpression(
+        catalog: String,
+        identifier: String,
+        language: String,
+        arguments: LabeledExprListSyntax,
+        originalNode: some SyntaxProtocol
+    ) -> ExprSyntax {
+        let argsText = formatArguments(arguments)
+        let qualifier = createQualifier(for: catalog)
+        let replacement = ExprSyntax.parse("String(localized: .\(qualifier)\(identifier)\(argsText).with(preferredLanguages: \(language)))")
+        return applyTrivia(from: originalNode, to: replacement)
+    }
+    
+    private func createQualifier(for catalog: String) -> String {
+        (catalog == "Localizable") ? "" : "\(catalog)."
+    }
+    
+    private func formatArguments(_ arguments: LabeledExprListSyntax) -> String {
+        guard !arguments.isEmpty else {
+            return ""
+        }
+        
+        return "(" + arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
+    }
+    
+    private func applyTrivia(
+        from original: some SyntaxProtocol,
+        to expr: ExprSyntax
+    ) -> ExprSyntax {
         let leading = original.leadingTrivia
         let trailing = original.trailingTrivia
         
