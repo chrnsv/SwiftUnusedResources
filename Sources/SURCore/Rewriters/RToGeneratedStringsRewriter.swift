@@ -10,10 +10,8 @@ public struct RToGeneratedStringsRewriter: Sendable {
             guard let enumerator = FileManager.default.enumerator(at: projectURL, includingPropertiesForKeys: nil)
             else { return [] }
             var catalogs = Set<String>()
-            for case let fileURL as URL in enumerator {
-                if fileURL.pathExtension == "xcstrings" {
-                    catalogs.insert(fileURL.deletingPathExtension().lastPathComponent.lowercased())
-                }
+            for case let fileURL as URL in enumerator where fileURL.pathExtension == "xcstrings" {
+                catalogs.insert(fileURL.deletingPathExtension().lastPathComponent.lowercased())
             }
             return catalogs
         }()
@@ -29,8 +27,8 @@ public struct RToGeneratedStringsRewriter: Sendable {
         let rewriter = Rewriter(xcstringCatalogs: catalogs)
         var rewritten = rewriter.visit(sourceFile)
         
-        if rewriter.usedSwiftUI && !hasImport(named: "SwiftUI", in: rewritten) {
-            rewritten = insertImport(named: "SwiftUI", into: rewritten)
+        if rewriter.usedSwiftUI && !ImportHelpers.hasImport(named: "SwiftUI", in: rewritten) {
+            rewritten = ImportHelpers.insertImport(named: "SwiftUI", into: rewritten)
         }
         
         let rewrittenString = rewritten.description
@@ -49,6 +47,7 @@ private extension RToGeneratedStringsRewriter {
         
         init(xcstringCatalogs: Set<String>) {
             self.catalogs = xcstringCatalogs
+            
             super.init()
         }
         
@@ -77,7 +76,8 @@ private extension RToGeneratedStringsRewriter {
                 let argsText: String
                 if node.arguments.isEmpty {
                     argsText = ""
-                } else {
+                }
+                else {
                     argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
                 }
                 let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
@@ -95,7 +95,8 @@ private extension RToGeneratedStringsRewriter {
                 let argsText: String
                 if node.arguments.isEmpty {
                     argsText = ""
-                } else {
+                }
+                else {
                     argsText = "(" + node.arguments.description.trimmingCharacters(in: .whitespacesAndNewlines) + ")"
                 }
                 let qualifier = (catalog == "Localizable") ? "" : "\(catalog)."
@@ -207,6 +208,7 @@ private extension RToGeneratedStringsRewriter.Rewriter {
             
             return ExprSyntax(call)
         }
+        
         if var member = expr.as(MemberAccessExprSyntax.self) {
             member = member
                 .with(\.leadingTrivia, leading)
@@ -214,6 +216,7 @@ private extension RToGeneratedStringsRewriter.Rewriter {
             
             return ExprSyntax(member)
         }
+        
         if var declRef = expr.as(DeclReferenceExprSyntax.self) {
             declRef = declRef
                 .with(\.leadingTrivia, leading)
@@ -221,63 +224,10 @@ private extension RToGeneratedStringsRewriter.Rewriter {
             
             return ExprSyntax(declRef)
         }
+        
         // Fallback: return as-is if we can't set trivia
         return expr
     }
-}
-
-// MARK: - Import Helpers
-func hasImport(named module: String, in file: SourceFileSyntax) -> Bool {
-    for item in file.statements {
-        if let imp = item.item.as(ImportDeclSyntax.self) {
-            if imp.path.description == module { return true }
-        }
-    }
-    return false
-}
-
-func insertImport(named module: String, into file: SourceFileSyntax) -> SourceFileSyntax {
-    // Build an import decl item by parsing text to keep formatting correct.
-    let parsed = Parser.parse(source: "import \(module)\n")
-    guard var importItem = parsed.statements.first else { return file }
-    
-    let insertIndex = lastImportInsertionIndex(in: file)
-    
-    // If inserting after an existing statement and that statement doesn't end
-    // with a newline, ensure the new import starts on a new line.
-    if insertIndex > 0 {
-        let prev = file.statements[file.statements.index(file.statements.startIndex, offsetBy: insertIndex - 1)]
-        if !triviaEndsWithNewline(prev.trailingTrivia) {
-            importItem = importItem.with(\.leadingTrivia, .newlines(1))
-        }
-    }
-    
-    let newStatements = file.statements.inserting(importItem, at: insertIndex)
-    return file.with(\.statements, newStatements)
-}
-
-func lastImportInsertionIndex(in file: SourceFileSyntax) -> Int {
-    var insertIndex = 0
-    var lastImportIndex: Int?
-    for (i, item) in file.statements.enumerated() where item.item.is(ImportDeclSyntax.self) {
-        lastImportIndex = i
-    }
-    if let idx = lastImportIndex { insertIndex = idx + 1 }
-    return insertIndex
-}
-
-func triviaEndsWithNewline(_ trivia: Trivia?) -> Bool {
-    guard let trivia else { return false }
-    for piece in trivia.reversed() {
-        switch piece {
-        case .newlines(let n): return n > 0
-        case .carriageReturns(let n): return n > 0
-        case .carriageReturnLineFeeds(let n): return n > 0
-        case .spaces, .tabs, .verticalTabs, .formfeeds: continue
-        default: return false
-        }
-    }
-    return false
 }
 
 private extension String {

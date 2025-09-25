@@ -17,8 +17,8 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         // If we performed any UIKit replacements and UIKit isn't imported, insert it on the transformed file.
         if rewriter.changedModules.contains(.uiKit) {
             let transformedFile = transformed.as(SourceFileSyntax.self) ?? source
-            if !hasImport(named: "UIKit", in: transformedFile) {
-                let withImport = insertImport(named: "UIKit", into: transformedFile)
+            if !ImportHelpers.hasImport(named: "UIKit", in: transformedFile) {
+                let withImport = ImportHelpers.insertImport(named: "UIKit", into: transformedFile)
                 transformed = Syntax(withImport)
             }
         }
@@ -26,8 +26,8 @@ public struct RToGeneratedAssetsRewriter: Sendable {
         // If we performed any SwiftUI replacements and SwiftUI isn't imported, insert it too.
         if rewriter.changedModules.contains(.swiftUI) {
             let transformedFile = transformed.as(SourceFileSyntax.self) ?? source
-            if !hasImport(named: "SwiftUI", in: transformedFile) {
-                let withImport = insertImport(named: "SwiftUI", into: transformedFile)
+            if !ImportHelpers.hasImport(named: "SwiftUI", in: transformedFile) {
+                let withImport = ImportHelpers.insertImport(named: "SwiftUI", into: transformedFile)
                 transformed = Syntax(withImport)
             }
         }
@@ -38,13 +38,13 @@ public struct RToGeneratedAssetsRewriter: Sendable {
             try newText.write(to: url, atomically: true, encoding: .utf8)
             return true
         }
+        
         return false
     }
-
-    /// Rewriter that converts `R.image.<identifier>()!` -> `UIImage(resource: .<identifier>)`.
 }
 
 private extension RToGeneratedAssetsRewriter {
+    /// Rewriter that converts `R.image.<identifier>()!` -> `UIImage(resource: .<identifier>)`.
     final class Rewriter: SyntaxRewriter {
         private(set) var changedModules: Set<Module> = []
 
@@ -123,61 +123,6 @@ private extension RToGeneratedAssetsRewriter {
     }
 }
 
-private extension RToGeneratedAssetsRewriter {
-    func hasImport(named module: String, in file: SourceFileSyntax) -> Bool {
-        for item in file.statements {
-            if let imp = item.item.as(ImportDeclSyntax.self) {
-                if imp.path.description == module { return true }
-            }
-        }
-        return false
-    }
-
-    func insertImport(named module: String, into file: SourceFileSyntax) -> SourceFileSyntax {
-        // Build an import decl item by parsing text to keep formatting correct.
-        let parsed = Parser.parse(source: "import \(module)\n")
-        guard var importItem = parsed.statements.first else { return file }
-
-        let insertIndex = lastImportInsertionIndex(in: file)
-
-        // If inserting after an existing statement and that statement doesn't end
-        // with a newline, ensure the new import starts on a new line.
-        if insertIndex > 0 {
-            let prev = file.statements[file.statements.index(file.statements.startIndex, offsetBy: insertIndex - 1)]
-            if !triviaEndsWithNewline(prev.trailingTrivia) {
-                importItem = importItem.with(\.leadingTrivia, .newlines(1))
-            }
-        }
-
-        let newStatements = file.statements.inserting(importItem, at: insertIndex)
-        return file.with(\.statements, newStatements)
-    }
-
-    func lastImportInsertionIndex(in file: SourceFileSyntax) -> Int {
-        var insertIndex = 0
-        var lastImportIndex: Int?
-        for (i, item) in file.statements.enumerated() where item.item.is(ImportDeclSyntax.self) {
-            lastImportIndex = i
-        }
-        if let idx = lastImportIndex { insertIndex = idx + 1 }
-        return insertIndex
-    }
-
-    func triviaEndsWithNewline(_ trivia: Trivia?) -> Bool {
-        guard let trivia else { return false }
-        for piece in trivia.reversed() {
-            switch piece {
-            case .newlines(let n): return n > 0
-            case .carriageReturns(let n): return n > 0
-            case .carriageReturnLineFeeds(let n): return n > 0
-            case .spaces, .tabs, .verticalTabs, .formfeeds: continue
-            default: return false
-            }
-        }
-        return false
-    }
-}
-
 private extension RToGeneratedAssetsRewriter.Rewriter {
     /// Matches `R.<kind>.<identifier>` returning (kind, identifier) if it matches.
     private func matchRKindIdentifier(from member: MemberAccessExprSyntax) -> (kind: Kind, identifier: String)? {
@@ -196,13 +141,6 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
         let identifier = member.declName.baseName.text
         
         return (kind, identifier)
-    }
-    
-    /// creates an expression for module
-    private func expr(for kind: Kind, with identifier: String, from module: Module) -> ExprSyntax {
-        changedModules.insert(module)
-        let resource = kind.resource(for: module, with: identifier.withoutImageAndColor())
-        return .parse(resource)
     }
     
     private func replaceCall(_ call: FunctionCallExprSyntax) -> ExprSyntax? {
@@ -235,6 +173,14 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
 
         return nil
     }
+    
+    /// creates an expression for module
+    private func expr(for kind: Kind, with identifier: String, from module: Module) -> ExprSyntax {
+        changedModules.insert(module)
+        let resource = kind.resource(for: module, with: identifier.withoutImageAndColor())
+        return .parse(resource)
+    }
+    
 }
 
 private enum Kind: String {

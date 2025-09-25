@@ -13,7 +13,7 @@ final class StringVisitor: SyntaxVisitor {
     }
     
     func parse() -> String {
-        return value
+        value
     }
     
     override func visit(_ node: StringSegmentSyntax) -> SyntaxVisitorContinueKind {
