@@ -63,7 +63,8 @@ private extension RToGeneratedStringsRewriter {
                 {
                     // Check for preferred languages pattern first
                     if let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: baseMember) {
-                        return createTextExpression(
+                        return createExpression(
+                            type: .text,
                             catalog: catalog,
                             identifier: identifier,
                             arguments: node.arguments,
@@ -73,7 +74,8 @@ private extension RToGeneratedStringsRewriter {
                     }
                     // Then check for regular pattern
                     else if let (catalog, identifier) = matchRStringCatalogIdentifier(from: baseMember) {
-                        return createTextExpression(
+                        return createExpression(
+                            type: .text,
                             catalog: catalog,
                             identifier: identifier,
                             arguments: node.arguments,
@@ -87,7 +89,8 @@ private extension RToGeneratedStringsRewriter {
                 let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
                 let (catalog, identifier, language) = matchRStringCatalogIdentifierAndPreferredLanguage(from: calledExpr)
             {
-                return createStringLocalizedExpression(
+                return createExpression(
+                    type: .stringLocalized,
                     catalog: catalog,
                     identifier: identifier,
                     arguments: node.arguments,
@@ -100,7 +103,8 @@ private extension RToGeneratedStringsRewriter {
                 let calledExpr = node.calledExpression.as(MemberAccessExprSyntax.self),
                 let (catalog, identifier) = matchRStringCatalogIdentifier(from: calledExpr)
             {
-                return createStringLocalizedExpression(
+                return createExpression(
+                    type: .stringLocalized,
                     catalog: catalog,
                     identifier: identifier,
                     arguments: node.arguments,
@@ -203,48 +207,27 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         return (catalog.capitalizedFirstLetter(), identifier)
     }
     
-    private func createTextExpression(
+    private func createExpression(
+        type: ExpressionType,
         catalog: String,
         identifier: String,
         arguments: LabeledExprListSyntax,
         language: String? = nil,
         originalNode: some SyntaxProtocol
     ) -> ExprSyntax {
-        usedSwiftUI = true
+        if type == .text {
+            usedSwiftUI = true
+        }
+        
         let argsText = formatArguments(arguments)
         let qualifier = createQualifier(for: catalog)
         
-        let baseExpression = "Text(.\(qualifier)\(identifier)\(argsText))"
+        let baseExpression = "\(type.prefix).\(qualifier)\(identifier)\(argsText))"
         let finalExpression: String
         
         if let language {
             finalExpression = "\(baseExpression).with(preferredLanguages: \(language))"
-        }
-        else {
-            finalExpression = baseExpression
-        }
-        
-        let replacement = ExprSyntax.parse(finalExpression)
-        return applyTrivia(from: originalNode, to: replacement)
-    }
-    
-    private func createStringLocalizedExpression(
-        catalog: String,
-        identifier: String,
-        arguments: LabeledExprListSyntax,
-        language: String? = nil,
-        originalNode: some SyntaxProtocol
-    ) -> ExprSyntax {
-        let argsText = formatArguments(arguments)
-        let qualifier = createQualifier(for: catalog)
-        
-        let baseExpression = "String(localized: .\(qualifier)\(identifier)\(argsText))"
-        let finalExpression: String
-        
-        if let language {
-            finalExpression = "\(baseExpression).with(preferredLanguages: \(language))"
-        }
-        else {
+        } else {
             finalExpression = baseExpression
         }
         
@@ -278,6 +261,22 @@ private extension RToGeneratedStringsRewriter.Rewriter {
         expr
             .with(\.leadingTrivia, original.leadingTrivia)
             .with(\.trailingTrivia, original.trailingTrivia)
+    }
+}
+
+private extension RToGeneratedStringsRewriter.Rewriter {
+    enum ExpressionType {
+        case text
+        case stringLocalized
+        
+        var prefix: String {
+            switch self {
+            case .text:
+                return "Text("
+            case .stringLocalized:
+                return "String(localized: "
+            }
+        }
     }
 }
 
