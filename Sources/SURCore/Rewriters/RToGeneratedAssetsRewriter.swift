@@ -237,14 +237,6 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
         return nil
     }
 
-    private func stripSuffix(_ name: String, _ suffix: String) -> String {
-        let lower = name.lowercased()
-        if lower.hasSuffix(suffix), name.count > suffix.count {
-            return String(name.dropLast(suffix.count))
-        }
-        return name
-    }
-
     private func parseExpr(_ text: String) -> ExprSyntax {
         // Parse a tiny source text as expression: we wrap it in a dummy file
         let file = Parser.parse(source: text)
