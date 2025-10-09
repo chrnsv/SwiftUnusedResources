@@ -142,7 +142,6 @@ private extension RToGeneratedStringsRewriter.Rewriter {
             let arg = call.arguments.first(where: { $0.label?.text == "preferredLanguages" })
         {
             let languageExpr = arg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-            print("Matched R.string(preferredLanguages: ...).\(catalog).\(identifier)")
             return (catalog.capitalizedFirstLetter(), identifier, languageExpr)
         }
         
@@ -153,7 +152,6 @@ private extension RToGeneratedStringsRewriter.Rewriter {
             declRef.baseName.text == "R",
             base.declName.baseName.text == "string"
         {
-            print("Matched R.string.\(catalog).\(identifier)")
             return (catalog.capitalizedFirstLetter(), identifier, nil)
         }
         
