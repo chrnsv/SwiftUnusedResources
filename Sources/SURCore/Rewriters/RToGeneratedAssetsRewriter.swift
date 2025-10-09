@@ -177,7 +177,7 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
         return nil
     }
     
-    /// creates an expression for module
+    /// Creates an expression for module.
     private func expr(for kind: Kind, with identifier: String, from module: Module) -> ExprSyntax {
         changedModules.insert(module)
         let resource = kind.resource(for: module, with: identifier.withoutImageAndColor())
