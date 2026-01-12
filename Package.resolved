@@ -1,5 +1,5 @@
 {
-  "originHash" : "39b4c125a061151921b03e3f7edb859ab17337914c88f2804a6b869783da84b6",
+  "originHash" : "ca440ea861a3ad6be08659fe9a16ef46c0f5e82a9e73a4c7b4ee0da9d7800d84",
   "pins" : [
     {
       "identity" : "aexml",
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/onevcat/Rainbow.git",
       "state" : {
-        "revision" : "16da5c62dd737258c6df2e8c430f8a3202f655a7",
-        "version" : "4.2.0"
+        "revision" : "cdf146ae671b2624917648b61c908d1244b98ca1",
+        "version" : "4.2.1"
       }
     },
     {
@@ -60,8 +60,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser",
       "state" : {
-        "revision" : "309a47b2b1d9b5e991f36961c983ecec72275be3",
-        "version" : "1.6.1"
+        "revision" : "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
+        "version" : "1.7.0"
       }
     },
     {
@@ -78,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/SimplyDanny/SwiftLintPlugins",
       "state" : {
-        "revision" : "6166499ede0efe43c3809f101d2c3cd409e2b77a",
-        "version" : "0.61.0"
+        "revision" : "707f7face5524fe918f82dd39c5c80cb3e591a44",
+        "version" : "0.63.0"
       }
     },
     {
@@ -96,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tuist/XcodeProj.git",
       "state" : {
-        "revision" : "e1f2a4365669e02272b2f381b13a2378b15fb485",
-        "version" : "9.5.0"
+        "revision" : "31712ec42e9cbc46e7fd25ea55c2730cb3476097",
+        "version" : "9.7.2"
       }
     },
     {
@@ -105,8 +105,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/jpsim/Yams.git",
       "state" : {
-        "revision" : "d41ba4e7164c0838c6d48351f7575f7f762151fe",
-        "version" : "6.1.0"
+        "revision" : "51b5127c7fb6ffac106ad6d199aaa33c5024895f",
+        "version" : "6.2.0"
       }
     }
   ],
