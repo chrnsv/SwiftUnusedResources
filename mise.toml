@@ -1,0 +1,117 @@
+[tasks.build]
+description = "Build universal binary"
+run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64 --arch x86_64"
+
+[tasks.artifactbundle]
+description = "Create artifact bundle"
+depends = ["build"]
+run = '''
+#!/usr/bin/env bash
+set -e
+
+VERSION=$1
+if [ -z "$VERSION" ]; then
+  echo "Error: Version argument is required. Usage: mise run artifactbundle <version>"
+  exit 1
+fi
+
+echo "Creating artifact bundle for SUR version $VERSION..."
+
+# Get executable path
+BIN_PATH=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
+EXECUTABLE_PATH="$BIN_PATH/sur"
+
+# Define bundle paths
+BUNDLE_NAME="sur-$VERSION.artifactbundle"
+BUNDLE_DIR="${BUNDLE_NAME}_tmp"
+mkdir -p "$BUNDLE_DIR/bin"
+
+# Copy executable
+cp "$EXECUTABLE_PATH" "$BUNDLE_DIR/bin/sur"
+
+# Create info.json
+cat <<EOF > "$BUNDLE_DIR/info.json"
+{
+    "schemaVersion": "1.0",
+    "artifacts": {
+        "sur": {
+            "version": "$VERSION",
+            "type": "executable",
+            "variants": [
+                {
+                    "path": "bin/sur",
+                    "supportedTriples": ["x86_64-apple-macosx", "arm64-apple-macosx"]
+                }
+            ]
+        }
+    }
+}
+EOF
+
+# Compress the bundle
+BUNDLE_ZIP="$BUNDLE_NAME.zip"
+rm -f "$BUNDLE_ZIP"
+(cd "$BUNDLE_DIR" && zip -q -r "../$BUNDLE_ZIP" .)
+
+# Clean up
+rm -rf "$BUNDLE_DIR"
+
+echo "Artifact bundle created: $BUNDLE_ZIP"
+'''
+
+[tasks.update-version]
+description = "Update version in podspec and Package.swift"
+run = '''
+#!/usr/bin/env bash
+set -e
+VERSION=$1
+if [ -z "$VERSION" ]; then
+  echo "Error: Version argument is required. Usage: mise run update-version <version>"
+  exit 1
+fi
+
+# 1. Update podspec version
+sed -i '' -E "s/(spec.version[[:space:]]*=[[:space:]]*')[^']+'/\1$VERSION'/" SwiftUnusedResources.podspec
+
+# 2. Update Package.swift version in URL
+sed -i '' -E "s|(releases/download/)[^/]+/(sur-).+(\.artifactbundle\.zip)|\1$VERSION/\2$VERSION\3|" Package.swift
+
+# 3. Update checksum (if zip exists)
+BUNDLE_ZIP="sur-$VERSION.artifactbundle.zip"
+if [ -f "$BUNDLE_ZIP" ]; then
+    echo "Found $BUNDLE_ZIP, updating checksum..."
+    CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
+    sed -i '' -E "s/(checksum:[[:space:]]*\")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
+    echo "Checksum updated: $CHECKSUM"
+fi
+
+echo "Successfully updated version to $VERSION"
+'''
+
+[tasks.publish]
+description = "Publish release to GitHub"
+run = '''
+#!/usr/bin/env bash
+set -e
+VERSION=$1
+if [ -z "$VERSION" ]; then
+  echo "Error: Version argument is required. Usage: mise run publish <version>"
+  exit 1
+fi
+
+BUNDLE_ZIP="sur-$VERSION.artifactbundle.zip"
+
+if [ ! -f "$BUNDLE_ZIP" ]; then
+    echo "Error: $BUNDLE_ZIP not found. Run 'mise run artifactbundle $VERSION' first."
+    exit 1
+fi
+
+if ! command -v gh &> /dev/null; then
+    echo "Error: GitHub CLI (gh) is not installed."
+    exit 1
+fi
+
+COMMIT=$(git rev-parse HEAD)
+echo "Publishing release $VERSION (target: $COMMIT) to GitHub..."
+gh release create "$VERSION" "$BUNDLE_ZIP" --target "$COMMIT" --title "$VERSION" --generate-notes
+'''

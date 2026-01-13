@@ -9,7 +9,7 @@ final class FuncCallVisitor: SyntaxVisitor {
     
     private(set) var usages: [ExploreUsage] = []
     
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    // swiftlint:disable:next cyclomatic_complexity
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         _ url: URL,
@@ -162,7 +162,7 @@ final class FuncCallVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-        return .skipChildren
+        .skipChildren
     }
 }
 

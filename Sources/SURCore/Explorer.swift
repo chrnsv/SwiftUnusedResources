@@ -55,7 +55,7 @@ public final class Explorer {
         print("🦒 Complete".bold)
     }
     
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    // swiftlint:disable:next cyclomatic_complexity
     private func analyze() async throws {
         let exploredResources = await storage.exploredResources
         let exploredUsages = await storage.exploredUsages
@@ -103,7 +103,7 @@ public final class Explorer {
                     if showWarnings {
                         var name = resource.name
                         if resource.path.starts(with: assets) {
-                            name = NSString(string: String(resource.path.dropFirst(assets.count + 1))).deletingPathExtension
+                            name = NSString(string: String(resource.path.dropFirst(assets.count))).deletingPathExtension
                         }
                         
                         print("\(assets): warning: '\(name)' never used")
@@ -362,7 +362,7 @@ private extension Configuration.Kind {
     }
 }
 
-private extension String {
+extension String {
     func withoutImageAndColor() -> String {
         let input = self
         let pattern = "(?i)(image|color)+$"

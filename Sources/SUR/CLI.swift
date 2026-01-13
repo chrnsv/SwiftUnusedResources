@@ -6,6 +6,10 @@ import SURCore
 
 @main
 struct CLI: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        subcommands: [RewriteCLI.self],
+        defaultSubcommand: CLI.self
+    )
     @Option(name: .shortAndLong, help: "Root path of your Xcode project. Default is current.", transform: { Path($0) })
     var project: Path?
     
