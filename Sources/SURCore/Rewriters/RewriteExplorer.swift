@@ -37,7 +37,7 @@ public struct RewriteExplorer: Sendable {
         self.dryRun = dryRun
         
         // Find string catalogs once during initialization
-        self.stringCatalogs = Self.findXCStringsCatalogs(in: projectPath.url)
+        self.stringCatalogs = Self.findXCStringsCatalogs(in: sourceRoot.url)
         
         if showWarnings && !stringCatalogs.isEmpty {
             print("📚 Found string catalogs: \(stringCatalogs.joined(separator: ", "))")
