@@ -1,6 +1,9 @@
 // swift-tools-version:6.2
 
 import PackageDescription
+import Foundation
+
+let skipSwiftLint = ProcessInfo.processInfo.environment["SKIP_SWIFTLINT"] != nil
 
 let package = Package(
     name: "SUR",
@@ -30,7 +33,7 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .target(name: "SURCore"),
             ],
-            plugins: [
+            plugins: skipSwiftLint ? [] : [
                  .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
             ]
         ),
@@ -53,7 +56,7 @@ let package = Package(
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "Yams", package: "Yams"),
             ],
-            plugins: [
+            plugins: skipSwiftLint ? [] : [
                  .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
             ]
         ),
