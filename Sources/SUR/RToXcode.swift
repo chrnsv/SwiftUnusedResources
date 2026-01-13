@@ -1,5 +1,5 @@
 //
-//  RewriteCLI.swift
+//  RToXcode.swift
 //  SUR
 //
 //  Created by Aleksandr Chernousov on 25/09/2025.
@@ -11,7 +11,7 @@ import PathKit
 import Rainbow
 import SURCore
 
-struct RewriteCLI: AsyncParsableCommand {
+struct RToXcode: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "r-to-xcode",
         abstract: "Rewrite R.swift usage to generated localization symbols"
