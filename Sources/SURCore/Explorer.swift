@@ -362,7 +362,7 @@ private extension Configuration.Kind {
     }
 }
 
-private extension String {
+extension String {
     func withoutImageAndColor() -> String {
         let input = self
         let pattern = "(?i)(image|color)+$"
