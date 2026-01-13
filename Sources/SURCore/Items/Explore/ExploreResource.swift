@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import PathKit
 
 struct ExploreResource: Sendable {
     let name: String

@@ -150,7 +150,7 @@ opt_in_rules:
   # - no_magic_numbers
   - private_action
   - private_outlet
-  - redundant_self_in_closure
+  - redundant_self
   - sorted_imports
   - strict_fileprivate
   - strong_iboutlet

@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version:6.2
 
 import PackageDescription
 
@@ -11,22 +11,22 @@ let package = Package(
         .library(name: "SURCore", targets: ["SURCore"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-syntax", from: "600.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "602.0.0"),
         .package(url: "https://github.com/kylef/PathKit.git", from: "1.0.1"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.5"),
-        .package(url: "https://github.com/tuist/XcodeProj.git", from: "8.23.7"),
+        .package(url: "https://github.com/tuist/XcodeProj.git", from: "9.7.2"),
         .package(url: "https://github.com/IBDecodable/IBDecodable.git", from: "0.6.1"),
-        .package(url: "https://github.com/onevcat/Rainbow.git", from: "4.0.1"),
-        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
-        .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", from: "0.57.0"),
-        .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.3")
+        .package(url: "https://github.com/onevcat/Rainbow.git", from: "4.2.1"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
+        .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins.git", from: "0.63.0"),
+        .package(url: "https://github.com/jpsim/Yams.git", from: "6.2.0")
     ],
     targets: [
         .executableTarget(
             name: "SUR",
             dependencies: [
-                "PathKit",
-                "Rainbow",
+                .product(name: "PathKit", package: "PathKit"),
+                .product(name: "Rainbow", package: "Rainbow"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .target(name: "SURCore"),
             ],
@@ -44,11 +44,11 @@ let package = Package(
         .target(
             name: "SURCore",
             dependencies:[
-                "PathKit",
-                "Glob",
-                "XcodeProj",
-                "IBDecodable",
-                "Rainbow",
+                .product(name: "PathKit", package: "PathKit"),
+                .product(name: "Glob", package: "Glob"),
+                .product(name: "XcodeProj", package: "XcodeProj"),
+                .product(name: "IBDecodable", package: "IBDecodable"),
+                .product(name: "Rainbow", package: "Rainbow"),
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "Yams", package: "Yams"),
