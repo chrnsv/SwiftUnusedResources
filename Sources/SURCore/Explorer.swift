@@ -198,6 +198,10 @@ public final class Explorer {
             throw ExploreError.notFound(message: "Could not get full path for resource \(resource) (uuid: \(resource.uuid))")
         }
         
+        if fullPath.containsDirectory(withExtension: "icon") {
+            return
+        }
+        
         try await explore(resource: fullPath)
     }
     
