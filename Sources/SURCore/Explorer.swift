@@ -176,8 +176,13 @@ public final class Explorer {
                     if ext != "xcassets" && resource.contains("xcassets") {
                         continue
                     }
+
+                    let resourcePath = Path(resource)
+                    if resourcePath.containsDirectory(withExtension: "icon") {
+                        continue
+                    }
                     
-                    try await explore(resource: Path(resource))
+                    try await explore(resource: resourcePath)
                 }
             }
             
@@ -191,6 +196,10 @@ public final class Explorer {
     private func explore(resource: PBXFileElement) async throws {
         guard let fullPath = try resource.fullPath(sourceRoot: sourceRoot) else {
             throw ExploreError.notFound(message: "Could not get full path for resource \(resource) (uuid: \(resource.uuid))")
+        }
+        
+        if fullPath.containsDirectory(withExtension: "icon") {
+            return
         }
         
         try await explore(resource: fullPath)
@@ -260,6 +269,7 @@ public final class Explorer {
         
         let resources = Glob(pattern: path.string + kind.assets)
             .map { Path($0) }
+            .filter { !$0.containsDirectory(withExtension: "icon") }
             .map {
                 ExploreResource(
                     name: $0.lastComponentWithoutExtension,
