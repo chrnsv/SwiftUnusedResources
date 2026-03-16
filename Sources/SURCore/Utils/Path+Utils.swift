@@ -29,4 +29,14 @@ extension Path {
             }
         }
     }
+
+    func containsDirectory(withExtension ext: String) -> Bool {
+        let directoryComponents = NSString(string: string)
+            .pathComponents
+            .dropLast()
+
+        return directoryComponents.contains { component in
+            Path(component).extension == ext
+        }
+    }
 }

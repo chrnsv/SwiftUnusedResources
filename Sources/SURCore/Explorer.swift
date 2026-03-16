@@ -176,8 +176,13 @@ public final class Explorer {
                     if ext != "xcassets" && resource.contains("xcassets") {
                         continue
                     }
+
+                    let resourcePath = Path(resource)
+                    if resourcePath.containsDirectory(withExtension: "icon") {
+                        continue
+                    }
                     
-                    try await explore(resource: Path(resource))
+                    try await explore(resource: resourcePath)
                 }
             }
             
@@ -260,6 +265,7 @@ public final class Explorer {
         
         let resources = Glob(pattern: path.string + kind.assets)
             .map { Path($0) }
+            .filter { !$0.containsDirectory(withExtension: "icon") }
             .map {
                 ExploreResource(
                     name: $0.lastComponentWithoutExtension,
