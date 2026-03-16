@@ -31,12 +31,19 @@ extension Path {
     }
 
     func containsDirectory(withExtension ext: String) -> Bool {
+        // Normalize the target extension: remove leading dot(s) and lowercase
+        let normalizedExt = ext.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+
         let directoryComponents = NSString(string: string)
             .pathComponents
             .dropLast()
 
         return directoryComponents.contains { component in
-            Path(component).extension == ext
+            let componentExt = Path(component).extension?
+                .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                .lowercased()
+
+            return componentExt == normalizedExt
         }
     }
 }
