@@ -11,7 +11,7 @@ struct ExploreResource: Sendable {
     let name: String
     let type: ResourceType
     let kind: ExploreKind
-    let path: String
+    let pathes: [String]
     var usedCount: Int = 0
     
     enum ResourceType: Sendable {
