@@ -54,6 +54,7 @@ let package = Package(
                 .product(name: "Rainbow", package: "Rainbow"),
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
+                .product(name: "SwiftOperators", package: "swift-syntax"),
                 .product(name: "Yams", package: "Yams"),
             ],
             plugins: skipSwiftLint ? [] : [
@@ -69,6 +70,11 @@ let package = Package(
             name: "SURCoreTests",
             dependencies: [
                 .target(name: "SURCore"),
+                .product(name: "PathKit", package: "PathKit"),
+                .product(name: "XcodeProj", package: "XcodeProj"),
+                .product(name: "Yams", package: "Yams"),
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftParser", package: "swift-syntax"),
             ],
             plugins: skipSwiftLint ? [] : [
                  .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")

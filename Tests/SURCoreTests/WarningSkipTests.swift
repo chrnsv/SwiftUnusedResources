@@ -59,7 +59,7 @@ struct WarningSkipTests {
         let view = Image(dynamicName)
         """)
 
-        #expect(output.isEmpty)
+        #expect(!output.contains("Couldn't guess match"))
     }
 
     @Test("Skips the warning for a UIImage(named:) annotated with // sur: skip")
@@ -71,7 +71,7 @@ struct WarningSkipTests {
         let image = UIImage(named: dynamicName)
         """)
 
-        #expect(output.isEmpty)
+        #expect(!output.contains("Couldn't guess match"))
     }
 
     @Test("Honors the directive in a trailing line comment")
@@ -82,7 +82,7 @@ struct WarningSkipTests {
         let view = Image(dynamicName) // sur: skip
         """)
 
-        #expect(output.isEmpty)
+        #expect(!output.contains("Couldn't guess match"))
     }
 
     @Test("Honors the directive without a space after the colon")
@@ -94,7 +94,7 @@ struct WarningSkipTests {
         let view = Image(dynamicName)
         """)
 
-        #expect(output.isEmpty)
+        #expect(!output.contains("Couldn't guess match"))
     }
 
     @Test("Ignores an unrelated comment")

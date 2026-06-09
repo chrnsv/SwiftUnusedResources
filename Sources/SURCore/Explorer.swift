@@ -17,7 +17,7 @@ public final class Explorer {
     private let memberCallKinds: [String: ExploreKind]
     private let propertyKinds: [String: ExploreKind]
 
-    private let storage = Storage()
+    let storage = Storage()
     
     public init(
         projectPath: Path,
