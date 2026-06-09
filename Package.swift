@@ -65,5 +65,14 @@ let package = Package(
             url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/0.2.0/sur-0.2.0.artifactbundle.zip",
             checksum: "e9b9a14acc466bcec39f43cea85993d2698b6503f212fb0e3805c4fd1636ff3a"
         ),
+        .testTarget(
+            name: "SURCoreTests",
+            dependencies: [
+                .target(name: "SURCore"),
+            ],
+            plugins: skipSwiftLint ? [] : [
+                 .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
+            ]
+        ),
     ]
 )
