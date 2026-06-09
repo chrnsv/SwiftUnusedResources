@@ -12,7 +12,7 @@ struct GeneratedResourceUsageTests {
         let parser = SwiftParser(showWarnings: false, kinds: [kind])
 
         return parser.parse(source: source).compactMap { usage in
-            if case .generated(let identifier, let usageKind) = usage, usageKind == kind {
+            if case let .generated(identifier, usageKind) = usage, usageKind == kind {
                 return identifier
             }
             return nil
