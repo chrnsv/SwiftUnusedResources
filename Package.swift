@@ -14,13 +14,13 @@ let package = Package(
         .library(name: "SURCore", targets: ["SURCore"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "602.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
         .package(url: "https://github.com/kylef/PathKit.git", from: "1.0.1"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.5"),
-        .package(url: "https://github.com/tuist/XcodeProj.git", from: "9.7.2"),
+        .package(url: "https://github.com/tuist/XcodeProj.git", from: "9.13.0"),
         .package(url: "https://github.com/IBDecodable/IBDecodable.git", from: "0.6.1"),
         .package(url: "https://github.com/onevcat/Rainbow.git", from: "4.2.1"),
-        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.0"),
         .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins.git", from: "0.63.0"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "6.2.0")
     ],
