@@ -9,7 +9,8 @@ final class SourceVisitor: SyntaxVisitor {
     private var hasSwiftUI = false
     
     private(set) var usages: [ExploreUsage] = []
-    
+    private var typedLocals: [String: ExploreKind] = [:]
+
     @discardableResult
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
@@ -80,14 +81,16 @@ final class SourceVisitor: SyntaxVisitor {
                 continue
             }
 
+            if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
+                typedLocals[name] = kind
+            }
+
             if let value = binding.initializer?.value {
-                collectBareMembers(in: value, with: kind)
+                collectValue(value, with: kind)
             }
 
             if let statements = getterStatements(of: binding.accessorBlock) {
-                for expression in returnPositionExpressions(in: statements) {
-                    collectBareMembers(in: expression, with: kind)
-                }
+                collectReturnedAssets(in: statements, with: kind)
             }
         }
 
@@ -96,9 +99,7 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
         if let kind = typedKind(for: node.signature.returnClause?.type), let body = node.body {
-            for expression in returnPositionExpressions(in: body.statements) {
-                collectBareMembers(in: expression, with: kind)
-            }
+            collectReturnedAssets(in: body.statements, with: kind)
         }
 
         return .visitChildren
@@ -106,9 +107,31 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
         if let kind = typedKind(for: node.signature?.returnClause?.type) {
-            for expression in returnPositionExpressions(in: node.statements) {
-                collectBareMembers(in: expression, with: kind)
-            }
+            collectReturnedAssets(in: node.statements, with: kind)
+        }
+
+        return .visitChildren
+    }
+
+    override func visit(_ node: SequenceExprSyntax) -> SyntaxVisitorContinueKind {
+        let elements = node.elements.array()
+
+        guard
+            elements.count >= 3,
+            elements[1].is(AssignmentExprSyntax.self),
+            let lhs = elements.first?.as(DeclReferenceExprSyntax.self),
+            let kind = typedLocals[lhs.baseName.text]
+        else {
+            return .visitChildren
+        }
+
+        let rhs = Array(elements.dropFirst(2))
+
+        if rhs.count == 1 {
+            collectValue(rhs[0], with: kind)
+        }
+        else {
+            rhs.forEach { collectBareMembers(in: $0, with: kind) }
         }
 
         return .visitChildren
@@ -235,21 +258,100 @@ extension SourceVisitor {
         }
     }
 
-    /// Collects return-position expressions: the single expression of an implicit-return
-    /// body, plus the expression of every `return` statement in the body.
-    private func returnPositionExpressions(in statements: CodeBlockItemListSyntax) -> [ExprSyntax] {
-        if statements.count == 1, let item = statements.first, case .expr(let expression) = item.item {
-            return [expression]
-        }
-
+    /// Collects every asset returned by a body — both explicit `return`s (anywhere in the body,
+    /// excluding nested scopes) and the implicit-return trailing expression — resolving through
+    /// `if` / `switch` / ternary branches without ever touching conditions or `case` patterns.
+    private func collectReturnedAssets(in statements: CodeBlockItemListSyntax, with kind: ExploreKind) {
         let visitor = ReturnVisitor(viewMode: viewMode)
         statements.forEach { visitor.walk($0) }
 
-        return visitor.expressions
+        let leaves = visitor.expressions.flatMap { resolveTail($0) } + implicitTail(of: statements)
+
+        leaves.forEach { collectBareMembers(in: $0, with: kind) }
+    }
+
+    /// Resolves the implicit-return value of a block: if its last item is an expression,
+    /// expand it through control-flow value positions; otherwise nothing.
+    private func implicitTail(of statements: CodeBlockItemListSyntax) -> [ExprSyntax] {
+        guard let last = statements.last, let expression = tailExpression(of: last.item) else {
+            return []
+        }
+
+        return resolveTail(expression)
+    }
+
+    /// The value expression of a trailing code-block item, unwrapping the `ExpressionStmtSyntax`
+    /// that wraps a standalone `if` / `switch` used as an implicit-return expression.
+    private func tailExpression(of item: CodeBlockItemSyntax.Item) -> ExprSyntax? {
+        switch item {
+        case .expr(let expression):
+            return expression
+
+        case .stmt(let statement):
+            return statement.as(ExpressionStmtSyntax.self)?.expression
+
+        default:
+            return nil
+        }
+    }
+
+    /// Expands a value-position expression into the leaf value expressions it may evaluate to,
+    /// descending through ternary / `if` / `switch` expressions (branch results only) and
+    /// unwrapping `try` / `await` / parentheses.
+    private func resolveTail(_ expression: ExprSyntax) -> [ExprSyntax] {
+        if let ternary = expression.as(TernaryExprSyntax.self) {
+            return resolveTail(ternary.thenExpression) + resolveTail(ternary.elseExpression)
+        }
+
+        if let ifExpr = expression.as(IfExprSyntax.self) {
+            return resolveTail(ifExpr)
+        }
+
+        if let switchExpr = expression.as(SwitchExprSyntax.self) {
+            return switchExpr.cases
+                .compactMap { $0.as(SwitchCaseSyntax.self) }
+                .flatMap { implicitTail(of: $0.statements) }
+        }
+
+        if let tryExpr = expression.as(TryExprSyntax.self) {
+            return resolveTail(tryExpr.expression)
+        }
+
+        if let awaitExpr = expression.as(AwaitExprSyntax.self) {
+            return resolveTail(awaitExpr.expression)
+        }
+
+        if let tuple = expression.as(TupleExprSyntax.self), tuple.elements.count == 1, let only = tuple.elements.first {
+            return resolveTail(only.expression)
+        }
+
+        return [expression]
+    }
+
+    private func resolveTail(_ ifExpr: IfExprSyntax) -> [ExprSyntax] {
+        var leaves = implicitTail(of: ifExpr.body.statements)
+
+        switch ifExpr.elseBody {
+        case .codeBlock(let block):
+            leaves += implicitTail(of: block.statements)
+
+        case .ifExpr(let elseIf):
+            leaves += resolveTail(elseIf)
+
+        case nil:
+            break
+        }
+
+        return leaves
+    }
+
+    /// Resolves a value expression (initializer / assignment RHS) and records its bare members.
+    private func collectValue(_ expression: ExprSyntax, with kind: ExploreKind) {
+        resolveTail(expression).forEach { collectBareMembers(in: $0, with: kind) }
     }
 
     /// Records every bare member access (`.assetName`, i.e. with no base) found in `expression`
-    /// as a `.generated` usage. Handles ternary branches, array literals and parentheses.
+    /// as a `.generated` usage. Handles array literals and member chains.
     private func collectBareMembers(in expression: some SyntaxProtocol, with kind: ExploreKind) {
         let visitor = BareMemberVisitor(viewMode: viewMode)
         visitor.walk(expression)
@@ -279,7 +381,9 @@ private extension SourceVisitor {
         }
     }
 
-    /// Collects the expressions of all `return` statements within the visited subtree.
+    /// Collects the expressions of all `return` statements within the visited subtree,
+    /// skipping nested scopes (closures, functions, subscripts, nested types) so their
+    /// returns are not attributed to the enclosing declaration.
     final class ReturnVisitor: SyntaxVisitor {
         private(set) var expressions: [ExprSyntax] = []
 
@@ -289,6 +393,38 @@ private extension SourceVisitor {
             }
 
             return .visitChildren
+        }
+
+        override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
+        }
+
+        override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
+            .skipChildren
         }
     }
 

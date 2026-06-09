@@ -97,7 +97,136 @@ struct GeneratedResourceUsageTests {
         #expect(ids == ["star"])
     }
 
+    // MARK: - Control flow: explicit returns
+
+    @Test("Detects assets returned from switch cases")
+    func switchExplicitReturns() {
+        let source = """
+        func icon(for state: State) -> ImageResource {
+            switch state {
+            case .loading: return .spinner
+            case .done: return .check
+            }
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["spinner", "check"])
+    }
+
+    @Test("Detects assets returned from if/else branches")
+    func ifElseExplicitReturns() {
+        let source = """
+        func icon(flag: Bool) -> ImageResource {
+            if flag { return .foo } else { return .bar }
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["foo", "bar"])
+    }
+
+    @Test("Detects early return plus trailing return")
+    func earlyAndTrailingReturn() {
+        let source = """
+        func icon(flag: Bool) -> ImageResource {
+            if flag { return .foo }
+            return .bar
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["foo", "bar"])
+    }
+
+    @Test("Detects asset returned from guard else")
+    func guardElseReturn() {
+        let source = """
+        func icon(value: Int?) -> ImageResource {
+            guard value != nil else { return .fallback }
+            return .main
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["fallback", "main"])
+    }
+
+    // MARK: - Control flow: implicit returns (expressions)
+
+    @Test("Detects assets in implicit-return switch expression, ignoring case patterns")
+    func switchImplicitReturn() {
+        let source = """
+        var icon: ImageResource {
+            switch state {
+            case .loading: .spinner
+            case .done: .check
+            }
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["spinner", "check"])
+        // Case patterns must not be collected as assets.
+        #expect(!ids.contains("loading"))
+        #expect(!ids.contains("done"))
+    }
+
+    @Test("Detects assets in implicit-return if/else expression")
+    func ifElseImplicitReturn() {
+        let source = """
+        var icon: ImageResource {
+            if flag { .foo } else { .bar }
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["foo", "bar"])
+    }
+
+    @Test("Detects assets in if nested inside a switch case")
+    func nestedIfInsideSwitch() {
+        let source = """
+        var icon: ImageResource {
+            switch state {
+            case .a: flag ? .one : .two
+            case .b: .three
+            }
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["one", "two", "three"])
+    }
+
+    // MARK: - Assignment dataflow
+
+    @Test("Detects assets assigned to a resource-typed local across branches")
+    func assignmentDataflow() {
+        let source = """
+        func icon(for state: State) -> ImageResource {
+            var result: ImageResource = .placeholder
+            switch state {
+            case .a: result = .foo
+            default: result = .bar
+            }
+            return result
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["placeholder", "foo", "bar"])
+    }
+
     // MARK: - Negative
+
+    @Test("Ignores switch over unrelated enum in non-resource context")
+    func ignoresUnrelatedSwitch() {
+        let source = """
+        func describe(_ state: State) -> String {
+            switch state {
+            case .success: "ok"
+            case .failure: "no"
+            }
+        }
+        """
+        let imageIds = generatedIdentifiers(source, kind: .image)
+        let colorIds = generatedIdentifiers(source, kind: .color)
+        #expect(imageIds.isEmpty)
+        #expect(colorIds.isEmpty)
+    }
 
     @Test("Ignores bare member in non-resource-typed context")
     func ignoresUnrelatedEnum() {
