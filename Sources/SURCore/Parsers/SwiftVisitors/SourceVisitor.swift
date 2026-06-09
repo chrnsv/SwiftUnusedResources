@@ -50,9 +50,11 @@ final class SourceVisitor: SyntaxVisitor {
         let newUsages = kinds
             .map { FuncCallVisitor(url, node, kind: $0, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings) }
             .flatMap { $0.usages }
-        
+
         usages.append(contentsOf: newUsages)
-        
+
+        collectMemberCallArguments(of: node)
+
         return super.visit(node)
     }
     
@@ -137,8 +139,7 @@ final class SourceVisitor: SyntaxVisitor {
             elements.count >= 3,
             elements[1].is(AssignmentExprSyntax.self),
             let lhs = elements.first,
-            let name = assignmentTargetName(lhs),
-            let kind = resolveTypedVariable(name)
+            let kind = assignedKind(of: lhs)
         else {
             return .visitChildren
         }
@@ -241,26 +242,80 @@ extension SourceVisitor {
         in node: DeclReferenceExprSyntax,
         with kind: ExploreKind
     ) -> ExploreUsage? {
-        guard [kind.uiClassName, kind.swiftUIClassName, kind.resourceClassName].contains(node.baseName.text) else {
+        guard kind.generatedClassNames.contains(node.baseName.text) else {
             return nil
         }
-        
-        if let parent = node.parent?.as(FunctionCallExprSyntax.self) {
-            guard parent.arguments.count == 1, let member = parent.arguments.last?.expression.as(MemberAccessExprSyntax.self) else {
+
+        if let call = initializerCall(of: node) {
+            guard call.arguments.count == 1, let member = call.arguments.last?.expression.as(MemberAccessExprSyntax.self) else {
                 return nil
             }
-            
+
             return .generated(member.declName.baseName.text, kind)
         }
         else {
-            let members = members(in: node)
-            
-            guard members.count == 2, let name = members.last else {
+            var members = members(in: node).array()
+
+            if let first = members.first, Self.assetModules.contains(first) {
+                members.removeFirst()
+            }
+
+            // `members.first == baseName` rejects chains rooted in an unknown namespace:
+            // in `MyKit.Image.star` the first member is `MyKit`, so `Image` there is some
+            // custom type, not the SwiftUI one.
+            guard members.count >= 2, members.first == node.baseName.text else {
                 return nil
             }
-            
+
+            let name = members[1]
+
+            // Asset symbols can never be named `init`; `UIImage.init(named:)` is not an asset.
+            guard name != "init" else {
+                return nil
+            }
+
             return .generated(name, kind)
         }
+    }
+
+    /// Records bare members passed to known color/image-taking member calls. Only unlabeled
+    /// arguments and arguments labeled `color` are collected, so control labels
+    /// (`for:`, `alignment:`, `in:`, …) are never mistaken for assets.
+    private func collectMemberCallArguments(of node: FunctionCallExprSyntax) {
+        guard
+            let member = node.calledExpression.as(MemberAccessExprSyntax.self),
+            let kind = Self.memberCallKinds[member.declName.baseName.text],
+            kinds.contains(kind)
+        else {
+            return
+        }
+
+        for argument in node.arguments {
+            guard argument.label == nil || argument.label?.text == "color" else {
+                continue
+            }
+
+            collectValue(argument.expression, with: kind)
+        }
+    }
+
+    /// The call node when `node` is the called type of an initializer call — either plain
+    /// `UIImage(...)` or module-qualified `SwiftUI.Image(...)`.
+    private func initializerCall(of node: DeclReferenceExprSyntax) -> FunctionCallExprSyntax? {
+        if let call = node.parent?.as(FunctionCallExprSyntax.self) {
+            return call
+        }
+
+        guard
+            let member = node.parent?.as(MemberAccessExprSyntax.self),
+            member.declName.id == node.id,
+            let base = member.base?.as(DeclReferenceExprSyntax.self),
+            Self.assetModules.contains(base.baseName.text)
+        else {
+            return nil
+        }
+
+        return member.parent?.as(FunctionCallExprSyntax.self)
     }
     
     private func members(in node: DeclReferenceExprSyntax) -> some RandomAccessCollection<String> {
@@ -310,6 +365,33 @@ extension SourceVisitor {
         return nil
     }
 
+    /// The resource kind an assignment target carries: a tracked resource-typed variable,
+    /// or a well-known UIKit color/image property on any object — `label.textColor`,
+    /// chained `cell.titleLabel.textColor`, explicit `self.tintColor` or implicit-self
+    /// `textColor`.
+    private func assignedKind(of expression: ExprSyntax) -> ExploreKind? {
+        if let name = assignmentTargetName(expression), let kind = resolveTypedVariable(name) {
+            return kind
+        }
+
+        let name: String? =
+            if let member = expression.as(MemberAccessExprSyntax.self) {
+                member.declName.baseName.text
+            }
+            else if let reference = expression.as(DeclReferenceExprSyntax.self) {
+                reference.baseName.text
+            }
+            else {
+                nil
+            }
+
+        guard let name, let kind = Self.propertyKinds[name], kinds.contains(kind) else {
+            return nil
+        }
+
+        return kind
+    }
+
     /// The tracked variable name an assignment targets: a bare `name` or an implicit-self
     /// `self.name`. Other member-access targets (`other.name`) are ignored, as they refer
     /// to a different object and would otherwise be misattributed to a same-named local.
@@ -349,7 +431,7 @@ extension SourceVisitor {
         }
 
         guard let identifier = type.as(IdentifierTypeSyntax.self) else {
-            return nil
+            return memberTypedKind(for: type)
         }
 
         let name = identifier.name.text
@@ -361,9 +443,22 @@ extension SourceVisitor {
             return nil
         }
 
-        let kind = kinds.first { $0.resourceClassName == name }
+        let kind = kinds.first { $0.generatedClassNames.contains(name) }
 
         return kind
+    }
+
+    /// Resolves a module-qualified type annotation like `SwiftUI.Image` or `UIKit.UIColor`.
+    private func memberTypedKind(for type: TypeSyntax) -> ExploreKind? {
+        guard
+            let member = type.as(MemberTypeSyntax.self),
+            let base = member.baseType.as(IdentifierTypeSyntax.self),
+            Self.assetModules.contains(base.name.text)
+        else {
+            return nil
+        }
+
+        return kinds.first { $0.generatedClassNames.contains(member.name.text) }
     }
 
     /// Returns the statements of a property's `get` accessor, covering both the
