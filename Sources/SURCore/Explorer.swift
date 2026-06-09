@@ -14,6 +14,8 @@ public final class Explorer {
     private let excludedSources: [Path]
     private let excludedAssets: [String]
     private let kinds: Set<ExploreKind>
+    private let memberCallKinds: [String: ExploreKind]
+    private let propertyKinds: [String: ExploreKind]
 
     private let storage = Storage()
     
@@ -39,6 +41,11 @@ public final class Explorer {
         excludedAssets = configuration?.exclude?.assets ?? []
         
         kinds = Set(configuration?.kinds?.map { $0.toKind() } ?? ExploreKind.allCases)
+
+        memberCallKinds = SourceVisitor.defaultMemberCallKinds
+            .merging(Self.symbolEntries(configuration?.symbols?.calls)) { _, user in user }
+        propertyKinds = SourceVisitor.defaultPropertyKinds
+            .merging(Self.symbolEntries(configuration?.symbols?.properties)) { _, user in user }
     }
     
     public func explore() async throws {
@@ -304,7 +311,12 @@ public final class Explorer {
     }
     
     private func explore(files: some Sequence<Path>) async throws {
-        let parser = SwiftParser(showWarnings: showWarnings, kinds: kinds)
+        let parser = SwiftParser(
+            showWarnings: showWarnings,
+            kinds: kinds,
+            memberCallKinds: memberCallKinds,
+            propertyKinds: propertyKinds
+        )
         
         let usages = try await withThrowingTaskGroup(of: [ExploreUsage].self) { group in
             files.forEach { path in
@@ -337,6 +349,16 @@ private extension Explorer {
 }
 
 private extension Explorer {
+    /// Flattens a sur.yml `symbols` entry group into name → kind pairs.
+    static func symbolEntries(_ names: Configuration.Symbols.KindNames?) -> [String: ExploreKind] {
+        var entries: [String: ExploreKind] = [:]
+
+        names?.color?.forEach { entries[$0] = .color }
+        names?.image?.forEach { entries[$0] = .image }
+
+        return entries
+    }
+
     static func configuration(using decoder: YAMLDecoder = .init(), from path: Path) -> Configuration? {
         let data = try? Data(contentsOf: path.url)
         return data.flatMap { try? decoder.decode(Configuration.self, from: $0) }

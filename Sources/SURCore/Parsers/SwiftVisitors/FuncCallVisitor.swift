@@ -204,7 +204,14 @@ final class FuncCallVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-        .skipChildren
+        // A module-qualified type like `UIKit.UIImage(named:)` is still the framework type;
+        // any other member-access callee (`view.background(...)`) is not a type reference.
+        if let base = node.base?.as(DeclReferenceExprSyntax.self),
+           SourceVisitor.assetModules.contains(base.baseName.text) {
+            name = node.declName.baseName.text
+        }
+
+        return .skipChildren
     }
 }
 

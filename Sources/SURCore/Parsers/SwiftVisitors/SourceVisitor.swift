@@ -5,9 +5,11 @@ final class SourceVisitor: SyntaxVisitor {
     private let url: URL
     private let showWarnings: Bool
     private let kinds: Set<ExploreKind>
+    private let memberCallKinds: [String: ExploreKind]
+    private let propertyKinds: [String: ExploreKind]
     private var hasUIKit = false
     private var hasSwiftUI = false
-    
+
     private(set) var usages: [ExploreUsage] = []
 
     /// Lexical scope stack of resource-typed variables, used to attribute assignments
@@ -21,13 +23,17 @@ final class SourceVisitor: SyntaxVisitor {
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         showWarnings: Bool,
         kinds: Set<ExploreKind>,
+        memberCallKinds: [String: ExploreKind] = SourceVisitor.defaultMemberCallKinds,
+        propertyKinds: [String: ExploreKind] = SourceVisitor.defaultPropertyKinds,
         _ url: URL,
         _ node: SourceFileSyntax
     ) {
         self.url = url
         self.showWarnings = showWarnings
         self.kinds = kinds
-        
+        self.memberCallKinds = memberCallKinds
+        self.propertyKinds = propertyKinds
+
         super.init(viewMode: viewMode)
         walk(node)
     }
@@ -35,14 +41,14 @@ final class SourceVisitor: SyntaxVisitor {
     override func visit(_ node: ImportDeclSyntax) -> SyntaxVisitorContinueKind {
         // TODO: get import name without .description
         let imp = node.path.description
-        
-        if imp == "UIKit" || imp == "WatchKit" {
+
+        if Self.uiKitModules.contains(imp) {
             hasUIKit = true
         }
-        else if imp == "SwiftUI" {
+        else if Self.swiftUIModules.contains(imp) {
             hasSwiftUI = true
         }
-        
+
         return .skipChildren
     }
     
@@ -107,6 +113,8 @@ final class SourceVisitor: SyntaxVisitor {
     override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
 
+        collectParameterDefaults(node.signature.parameterClause.parameters)
+
         if let kind = typedKind(for: node.signature.returnClause?.type), let body = node.body {
             collectReturnedAssets(in: body.statements, with: kind)
         }
@@ -158,10 +166,30 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+
+        collectParameterDefaults(node.signature.parameterClause.parameters)
+
         return .visitChildren
     }
 
     override func visitPost(_ node: InitializerDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+
+        collectParameterDefaults(node.parameterClause.parameters)
+
+        if let kind = typedKind(for: node.returnClause.type),
+           let statements = getterStatements(of: node.accessorBlock) {
+            collectReturnedAssets(in: statements, with: kind)
+        }
+
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: SubscriptDeclSyntax) {
         popScope()
     }
 
@@ -242,16 +270,19 @@ extension SourceVisitor {
         in node: DeclReferenceExprSyntax,
         with kind: ExploreKind
     ) -> ExploreUsage? {
-        guard kind.generatedClassNames.contains(node.baseName.text) else {
+        guard Self.generatedClassKinds[node.baseName.text] == kind else {
             return nil
         }
 
         if let call = initializerCall(of: node) {
-            guard call.arguments.count == 1, let member = call.arguments.last?.expression.as(MemberAccessExprSyntax.self) else {
-                return nil
+            // collectValue resolves ternary / if / switch branches before recording, so
+            // `UIImage(resource: flag ? .a : .b)` records both assets. Usages are appended
+            // directly; a DeclRef has no children worth skipping, so returning nil is fine.
+            if call.arguments.count == 1, let argument = call.arguments.first {
+                collectValue(argument.expression, with: kind)
             }
 
-            return .generated(member.declName.baseName.text, kind)
+            return nil
         }
         else {
             var members = members(in: node).array()
@@ -284,7 +315,7 @@ extension SourceVisitor {
     private func collectMemberCallArguments(of node: FunctionCallExprSyntax) {
         guard
             let member = node.calledExpression.as(MemberAccessExprSyntax.self),
-            let kind = Self.memberCallKinds[member.declName.baseName.text],
+            let kind = memberCallKinds[member.declName.baseName.text],
             kinds.contains(kind)
         else {
             return
@@ -295,7 +326,30 @@ extension SourceVisitor {
                 continue
             }
 
-            collectValue(argument.expression, with: kind)
+            collectShallowBareMembers(in: argument.expression, with: kind)
+        }
+    }
+
+    /// Records the innermost bare member of each resolved leaf (`.brand`, `.brand.opacity(0.5)`,
+    /// `[.a, .b]`, `flag ? .a : .b`) WITHOUT the deep subtree walk used for typed contexts —
+    /// view-builder arguments like `.background(VStack { ... })` must contribute nothing.
+    private func collectShallowBareMembers(in expression: ExprSyntax, with kind: ExploreKind) {
+        for leaf in resolveTail(expression) {
+            if let array = leaf.as(ArrayExprSyntax.self) {
+                array.elements.forEach { collectShallowBareMembers(in: $0.expression, with: kind) }
+            }
+            else if let sequence = leaf.as(SequenceExprSyntax.self) {
+                // The parser does not fold operators, so a ternary argument arrives as a flat
+                // sequence: `flag ? .a : .b` → [flag, UnresolvedTernary(.a), .b]. Collect from
+                // each operand; the unresolved-ternary element carries the `then` branch.
+                for element in sequence.elements {
+                    let unwrapped = element.as(UnresolvedTernaryExprSyntax.self)?.thenExpression ?? element
+                    collectShallowBareMembers(in: unwrapped, with: kind)
+                }
+            }
+            else if let name = innermostBareMember(of: leaf) {
+                usages.append(.generated(name, kind))
+            }
         }
     }
 
@@ -366,26 +420,21 @@ extension SourceVisitor {
     }
 
     /// The resource kind an assignment target carries: a tracked resource-typed variable,
-    /// or a well-known UIKit color/image property on any object — `label.textColor`,
-    /// chained `cell.titleLabel.textColor`, explicit `self.tintColor` or implicit-self
-    /// `textColor`.
+    /// or a well-known UIKit color/image property accessed on some object — `label.textColor`,
+    /// chained `cell.titleLabel.textColor`, explicit `self.tintColor`. Bare identifiers are
+    /// deliberately NOT matched against the curated names: `image = .remote` is far more
+    /// likely a plain local than an implicit-self UIKit property (write `self.image` for those),
+    /// and matching it would mask unused assets behind common variable names.
     private func assignedKind(of expression: ExprSyntax) -> ExploreKind? {
         if let name = assignmentTargetName(expression), let kind = resolveTypedVariable(name) {
             return kind
         }
 
-        let name: String? =
-            if let member = expression.as(MemberAccessExprSyntax.self) {
-                member.declName.baseName.text
-            }
-            else if let reference = expression.as(DeclReferenceExprSyntax.self) {
-                reference.baseName.text
-            }
-            else {
-                nil
-            }
-
-        guard let name, let kind = Self.propertyKinds[name], kinds.contains(kind) else {
+        guard
+            let name = expression.as(MemberAccessExprSyntax.self)?.declName.baseName.text,
+            let kind = propertyKinds[name],
+            kinds.contains(kind)
+        else {
             return nil
         }
 
@@ -443,9 +492,7 @@ extension SourceVisitor {
             return nil
         }
 
-        let kind = kinds.first { $0.generatedClassNames.contains(name) }
-
-        return kind
+        return kind(forTypeName: name)
     }
 
     /// Resolves a module-qualified type annotation like `SwiftUI.Image` or `UIKit.UIColor`.
@@ -458,26 +505,16 @@ extension SourceVisitor {
             return nil
         }
 
-        return kinds.first { $0.generatedClassNames.contains(member.name.text) }
+        return kind(forTypeName: member.name.text)
     }
 
-    /// Returns the statements of a property's `get` accessor, covering both the
-    /// shorthand `{ ... }` getter and an explicit `get { ... }` accessor.
-    private func getterStatements(of accessorBlock: AccessorBlockSyntax?) -> CodeBlockItemListSyntax? {
-        guard let accessorBlock else {
+    /// The explored kind whose generated symbols live on the type with this name, if any.
+    private func kind(forTypeName name: String) -> ExploreKind? {
+        guard let kind = Self.generatedClassKinds[name], kinds.contains(kind) else {
             return nil
         }
 
-        switch accessorBlock.accessors {
-        case .getter(let statements):
-            return statements
-
-        case .accessors(let accessors):
-            return accessors
-                .first { $0.accessorSpecifier.tokenKind == .keyword(.get) }?
-                .body?
-                .statements
-        }
+        return kind
     }
 
     /// Collects every asset returned by a body — both explicit `return`s (anywhere in the body,
@@ -492,79 +529,14 @@ extension SourceVisitor {
         leaves.forEach { collectBareMembers(in: $0, with: kind) }
     }
 
-    /// Resolves the implicit-return value of a block: if its last item is an expression,
-    /// expand it through control-flow value positions; otherwise nothing.
-    private func implicitTail(of statements: CodeBlockItemListSyntax) -> [ExprSyntax] {
-        guard let last = statements.last, let expression = tailExpression(of: last.item) else {
-            return []
+    /// Records assets used as default values of resource-typed parameters,
+    /// e.g. `func makeBadge(icon: UIImage = .star)`.
+    private func collectParameterDefaults(_ parameters: FunctionParameterListSyntax) {
+        for parameter in parameters {
+            if let kind = typedKind(for: parameter.type), let value = parameter.defaultValue?.value {
+                collectValue(value, with: kind)
+            }
         }
-
-        return resolveTail(expression)
-    }
-
-    /// The value expression of a trailing code-block item, unwrapping the `ExpressionStmtSyntax`
-    /// that wraps a standalone `if` / `switch` used as an implicit-return expression.
-    private func tailExpression(of item: CodeBlockItemSyntax.Item) -> ExprSyntax? {
-        switch item {
-        case .expr(let expression):
-            return expression
-
-        case .stmt(let statement):
-            return statement.as(ExpressionStmtSyntax.self)?.expression
-
-        default:
-            return nil
-        }
-    }
-
-    /// Expands a value-position expression into the leaf value expressions it may evaluate to,
-    /// descending through ternary / `if` / `switch` expressions (branch results only) and
-    /// unwrapping `try` / `await` / parentheses.
-    private func resolveTail(_ expression: ExprSyntax) -> [ExprSyntax] {
-        if let ternary = expression.as(TernaryExprSyntax.self) {
-            return resolveTail(ternary.thenExpression) + resolveTail(ternary.elseExpression)
-        }
-
-        if let ifExpr = expression.as(IfExprSyntax.self) {
-            return resolveTail(ifExpr)
-        }
-
-        if let switchExpr = expression.as(SwitchExprSyntax.self) {
-            return switchExpr.cases
-                .compactMap { $0.as(SwitchCaseSyntax.self) }
-                .flatMap { implicitTail(of: $0.statements) }
-        }
-
-        if let tryExpr = expression.as(TryExprSyntax.self) {
-            return resolveTail(tryExpr.expression)
-        }
-
-        if let awaitExpr = expression.as(AwaitExprSyntax.self) {
-            return resolveTail(awaitExpr.expression)
-        }
-
-        if let tuple = expression.as(TupleExprSyntax.self), tuple.elements.count == 1, let only = tuple.elements.first {
-            return resolveTail(only.expression)
-        }
-
-        return [expression]
-    }
-
-    private func resolveTail(_ ifExpr: IfExprSyntax) -> [ExprSyntax] {
-        var leaves = implicitTail(of: ifExpr.body.statements)
-
-        switch ifExpr.elseBody {
-        case .codeBlock(let block):
-            leaves += implicitTail(of: block.statements)
-
-        case .ifExpr(let elseIf):
-            leaves += resolveTail(elseIf)
-
-        case nil:
-            break
-        }
-
-        return leaves
     }
 
     /// Resolves a value expression (initializer / assignment RHS) and records its bare members.

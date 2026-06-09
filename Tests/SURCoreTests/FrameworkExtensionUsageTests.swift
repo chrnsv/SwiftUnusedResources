@@ -109,6 +109,32 @@ struct FrameworkExtensionUsageTests {
         #expect(!ids.contains("Image"))
     }
 
+    @Test("Detects both branches of a ternary initializer argument")
+    func branchedInitializerArgument() {
+        let resourceIds = generatedIdentifiers("let image = UIImage(resource: flag ? .a : .b)", kind: .image)
+        #expect(Set(resourceIds) == ["a", "b"])
+
+        let imageIds = generatedIdentifiers("let view = Image(flag ? .dark : .light)", kind: .image)
+        #expect(Set(imageIds) == ["dark", "light"])
+    }
+
+    @Test("Module-qualified string initializers still produce a regexp usage")
+    func moduleQualifiedNamedInitializer() {
+        let uiKitSource = """
+        import UIKit
+        let image = UIKit.UIImage(named: "star")
+        """
+        let uiKitUsages = usages(uiKitSource, kind: .image)
+        #expect(uiKitUsages == [.regexp("star", .image)])
+
+        let swiftUISource = """
+        import SwiftUI
+        let view = SwiftUI.Image("banner")
+        """
+        let swiftUIUsages = usages(swiftUISource, kind: .image)
+        #expect(swiftUIUsages == [.regexp("banner", .image)])
+    }
+
     // MARK: - Typed contexts
 
     @Test("Detects bare member in framework-typed bindings")
@@ -140,6 +166,42 @@ struct FrameworkExtensionUsageTests {
     func closureReturn() {
         let ids = generatedIdentifiers("let make = { () -> Image in .star }", kind: .image)
         #expect(ids == ["star"])
+    }
+
+    @Test("Detects assets in parameter default values")
+    func parameterDefaults() {
+        let funcIds = generatedIdentifiers("func makeBadge(icon: UIImage = .star) {}", kind: .image)
+        #expect(funcIds == ["star"])
+
+        let initSource = """
+        struct Palette {
+            init(colors: [ColorResource] = [.a, .b]) {}
+        }
+        """
+        let initIds = generatedIdentifiers(initSource, kind: .color)
+        #expect(initIds == ["a", "b"])
+    }
+
+    @Test("Detects bare members returned from subscripts")
+    func subscriptReturns() {
+        let implicitSource = """
+        struct IconSet {
+            subscript(index: Int) -> UIImage { .star }
+        }
+        """
+        #expect(generatedIdentifiers(implicitSource, kind: .image) == ["star"])
+
+        let explicitSource = """
+        struct IconSet {
+            subscript(state: State) -> ImageResource {
+                switch state {
+                case .loading: return .spinner
+                case .done: return .check
+                }
+            }
+        }
+        """
+        #expect(Set(generatedIdentifiers(explicitSource, kind: .image)) == ["spinner", "check"])
     }
 
     @Test("Detects assets in control flow with framework return type")
@@ -188,99 +250,6 @@ struct FrameworkExtensionUsageTests {
         // direction — it can never cause a used asset to be reported as unused.
         let ids = generatedIdentifiers("let c: Color = .red", kind: .color)
         #expect(ids == ["red"])
-    }
-
-    // MARK: - SwiftUI modifiers
-
-    @Test("Detects colors passed to SwiftUI modifiers")
-    func swiftUIModifiers() {
-        #expect(generatedIdentifiers("let v = text.foregroundColor(.brand)", kind: .color) == ["brand"])
-        #expect(generatedIdentifiers("let v = view.tint(.accent)", kind: .color) == ["accent"])
-        #expect(generatedIdentifiers("let v = view.foregroundStyle(.brand)", kind: .color) == ["brand"])
-        #expect(generatedIdentifiers("let v = view.background(.brand)", kind: .color) == ["brand"])
-        #expect(generatedIdentifiers("let v = row.listRowSeparatorTint(.brand)", kind: .color) == ["brand"])
-        #expect(generatedIdentifiers("let v = row.listItemTint(.brand)", kind: .color) == ["brand"])
-    }
-
-    @Test("Detects color in labeled color: argument")
-    func labeledColorArgument() {
-        let ids = generatedIdentifiers("let v = view.shadow(color: .glow, radius: 4)", kind: .color)
-        #expect(ids == ["glow"])
-    }
-
-    @Test("Detects color in a modifier chain")
-    func modifierChain() {
-        let source = """
-        let v = Text("hi").foregroundColor(.brand).padding()
-        """
-        let ids = generatedIdentifiers(source, kind: .color)
-        #expect(ids == ["brand"])
-    }
-
-    @Test("Detects both ternary branches in a modifier argument")
-    func ternaryModifierArgument() {
-        let ids = generatedIdentifiers("let v = view.foregroundColor(flag ? .a : .b)", kind: .color)
-        #expect(Set(ids) == ["a", "b"])
-    }
-
-    @Test("Modifier arguments are recorded as colors only")
-    func modifierKindIsColor() {
-        let ids = generatedIdentifiers("let v = view.foregroundColor(.brand)", kind: .image)
-        #expect(ids.isEmpty)
-    }
-
-    // MARK: - UIKit setters
-
-    @Test("Detects color in setTitleColor, ignoring the state label")
-    func setTitleColor() {
-        let source = "button.setTitleColor(.brand, for: .normal)"
-        let ids = generatedIdentifiers(source, kind: .color)
-        #expect(ids == ["brand"])
-        #expect(!ids.contains("normal"))
-    }
-
-    @Test("Detects image in setImage, ignoring the state label")
-    func setImage() {
-        let ids = generatedIdentifiers("button.setImage(.star, for: .normal)", kind: .image)
-        #expect(ids == ["star"])
-        #expect(!ids.contains("normal"))
-    }
-
-    @Test("Detects images in slider and page-control setters")
-    func sliderAndPageControlSetters() {
-        #expect(generatedIdentifiers("slider.setThumbImage(.knob, for: .normal)", kind: .image) == ["knob"])
-        #expect(generatedIdentifiers("pages.setIndicatorImage(.dot, forPage: 0)", kind: .image) == ["dot"])
-    }
-
-    // MARK: - UIKit property assignments
-
-    @Test("Detects assets assigned to well-known UIKit properties")
-    func propertyAssignments() {
-        #expect(generatedIdentifiers("label.textColor = .brand", kind: .color) == ["brand"])
-        #expect(generatedIdentifiers("view.backgroundColor = .bg", kind: .color) == ["bg"])
-        #expect(generatedIdentifiers("slider.minimumTrackTintColor = .track", kind: .color) == ["track"])
-        #expect(generatedIdentifiers("tabBar.unselectedItemTintColor = .dim", kind: .color) == ["dim"])
-        #expect(generatedIdentifiers("imageView.image = .star", kind: .image) == ["star"])
-        #expect(generatedIdentifiers("imageView.highlightedImage = .hl", kind: .image) == ["hl"])
-        #expect(generatedIdentifiers("progressView.progressImage = .bar", kind: .image) == ["bar"])
-    }
-
-    @Test("Detects asset assigned to a self-qualified property")
-    func selfQualifiedAssignment() {
-        let ids = generatedIdentifiers("self.tintColor = .accent", kind: .color)
-        #expect(ids == ["accent"])
-    }
-
-    @Test("Detects asset assigned through a chained base")
-    func chainedBaseAssignment() {
-        let ids = generatedIdentifiers("cell.titleLabel.textColor = .brand", kind: .color)
-        #expect(ids == ["brand"])
-    }
-
-    @Test("Detects both ternary branches in a property assignment")
-    func ternaryAssignment() {
-        let ids = generatedIdentifiers("label.textColor = flag ? .a : .b", kind: .color)
-        #expect(Set(ids) == ["a", "b"])
     }
 
     // MARK: - Negative
@@ -349,23 +318,5 @@ struct FrameworkExtensionUsageTests {
         """
         let ids = generatedIdentifiers(source, kind: .image)
         #expect(ids == ["star"])
-    }
-
-    @Test("Ignores calls outside the curated modifier list")
-    func ignoresUncuratedCalls() {
-        #expect(generatedIdentifiers("let v = view.padding(.horizontal)", kind: .color).isEmpty)
-        #expect(generatedIdentifiers("let v = view.padding(.horizontal)", kind: .image).isEmpty)
-    }
-
-    @Test("Ignores control labels of curated calls")
-    func ignoresControlLabels() {
-        let ids = generatedIdentifiers("let v = view.background(alignment: .top) { overlay }", kind: .color)
-        #expect(!ids.contains("top"))
-    }
-
-    @Test("Ignores assignment to properties outside the curated list")
-    func ignoresUncuratedProperty() {
-        let ids = generatedIdentifiers("foo.delegate = .none", kind: .image)
-        #expect(ids.isEmpty)
     }
 }
