@@ -14,9 +14,9 @@ jobs:
     name: Build & test
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
@@ -36,9 +36,9 @@ jobs:
   lint:
     name: SwiftLint (strict)
     runs-on: ubuntu-latest
-    container: ghcr.io/realm/swiftlint:0.63.2
+    container: ghcr.io/realm/swiftlint:0.63.3
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Lint
         run: swiftlint lint --strict --reporter github-actions-logging Sources Tests Plugins
