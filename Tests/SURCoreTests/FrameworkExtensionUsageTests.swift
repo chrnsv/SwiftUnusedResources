@@ -198,6 +198,8 @@ struct FrameworkExtensionUsageTests {
         #expect(generatedIdentifiers("let v = view.tint(.accent)", kind: .color) == ["accent"])
         #expect(generatedIdentifiers("let v = view.foregroundStyle(.brand)", kind: .color) == ["brand"])
         #expect(generatedIdentifiers("let v = view.background(.brand)", kind: .color) == ["brand"])
+        #expect(generatedIdentifiers("let v = row.listRowSeparatorTint(.brand)", kind: .color) == ["brand"])
+        #expect(generatedIdentifiers("let v = row.listItemTint(.brand)", kind: .color) == ["brand"])
     }
 
     @Test("Detects color in labeled color: argument")
@@ -244,14 +246,23 @@ struct FrameworkExtensionUsageTests {
         #expect(!ids.contains("normal"))
     }
 
+    @Test("Detects images in slider and page-control setters")
+    func sliderAndPageControlSetters() {
+        #expect(generatedIdentifiers("slider.setThumbImage(.knob, for: .normal)", kind: .image) == ["knob"])
+        #expect(generatedIdentifiers("pages.setIndicatorImage(.dot, forPage: 0)", kind: .image) == ["dot"])
+    }
+
     // MARK: - UIKit property assignments
 
     @Test("Detects assets assigned to well-known UIKit properties")
     func propertyAssignments() {
         #expect(generatedIdentifiers("label.textColor = .brand", kind: .color) == ["brand"])
         #expect(generatedIdentifiers("view.backgroundColor = .bg", kind: .color) == ["bg"])
+        #expect(generatedIdentifiers("slider.minimumTrackTintColor = .track", kind: .color) == ["track"])
+        #expect(generatedIdentifiers("tabBar.unselectedItemTintColor = .dim", kind: .color) == ["dim"])
         #expect(generatedIdentifiers("imageView.image = .star", kind: .image) == ["star"])
         #expect(generatedIdentifiers("imageView.highlightedImage = .hl", kind: .image) == ["hl"])
+        #expect(generatedIdentifiers("progressView.progressImage = .bar", kind: .image) == ["bar"])
     }
 
     @Test("Detects asset assigned to a self-qualified property")
