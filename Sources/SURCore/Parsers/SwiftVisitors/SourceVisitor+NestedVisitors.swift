@@ -60,6 +60,11 @@ extension SourceVisitor {
 
     /// Collects the names of bare member accesses (member accesses with no base, e.g. `.assetName`).
     /// Skips children once a bare member is found so the innermost member of a chain is recorded once.
+    ///
+    /// Function-call arguments are intentionally walked, not skipped: wrapper constructors such as
+    /// `Optional.some(.asset)` / `Optional(.asset)` carry the real resource inside the argument, and
+    /// missing it would be a false negative — far worse for an unused-resource tool (it could lead to
+    /// deleting an actually-used asset) than the harmless over-collection of an unrelated argument.
     final class BareMemberVisitor: SyntaxVisitor {
         private(set) var names: [String] = []
 
@@ -69,20 +74,6 @@ extension SourceVisitor {
             }
 
             names.append(node.declName.baseName.text)
-
-            return .skipChildren
-        }
-
-        override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-            // Only the called expression can be part of the value (e.g. `.asset.resized()`);
-            // arguments are unrelated expressions and must not be harvested as bare members.
-            walk(node.calledExpression)
-
-            return .skipChildren
-        }
-
-        override func visit(_ node: SubscriptCallExprSyntax) -> SyntaxVisitorContinueKind {
-            walk(node.calledExpression)
 
             return .skipChildren
         }

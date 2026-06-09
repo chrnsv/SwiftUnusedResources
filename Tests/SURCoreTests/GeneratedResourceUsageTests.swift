@@ -210,18 +210,31 @@ struct GeneratedResourceUsageTests {
         #expect(Set(ids) == ["placeholder", "foo", "bar"])
     }
 
-    // MARK: - Precision
+    // MARK: - Wrapper constructors
 
-    @Test("Ignores bare members passed as function-call arguments in a resource return")
-    func ignoresCallArguments() {
+    @Test("Detects a resource wrapped in Optional.some(...)")
+    func wrappedInOptionalSome() {
         let source = """
-        func icon(for screen: Screen) -> ImageResource {
-            resolve(for: .settingsScreen)
+        func icon() -> ImageResource? {
+            Optional.some(.star)
         }
         """
         let ids = generatedIdentifiers(source, kind: .image)
-        #expect(ids.isEmpty)
+        #expect(ids == ["star"])
     }
+
+    @Test("Detects a resource wrapped in a bare .some(...) and Optional(...)")
+    func wrappedInBareSomeAndInit() {
+        // The wrapped resource must be captured; over-collecting the `.some` wrapper itself is the
+        // harmless, safe direction (it never causes a used asset to be reported as unused).
+        let someIds = generatedIdentifiers("let icon: ImageResource? = .some(.star)", kind: .image)
+        #expect(someIds.contains("star"))
+
+        let initIds = generatedIdentifiers("let icon: ImageResource? = Optional(.brand)", kind: .image)
+        #expect(initIds == ["brand"])
+    }
+
+    // MARK: - Precision
 
     @Test("Confines resource-typed locals to their own scope")
     func scopedTypedLocals() {
