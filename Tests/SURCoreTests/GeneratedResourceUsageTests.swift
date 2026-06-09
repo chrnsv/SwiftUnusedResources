@@ -254,6 +254,37 @@ struct GeneratedResourceUsageTests {
         #expect(Set(ids) == ["seed", "reassigned"])
     }
 
+    @Test("Detects self-qualified assignment to a resource-typed stored property")
+    func selfQualifiedPropertyAssignment() {
+        let source = """
+        class Library {
+            var icon: ImageResource = .seed
+
+            func update() {
+                self.icon = .reassigned
+            }
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["seed", "reassigned"])
+    }
+
+    @Test("Ignores assignment to a same-named property on another object")
+    func ignoresForeignObjectAssignment() {
+        let source = """
+        class Library {
+            var icon: ImageResource = .seed
+
+            func update(other: Other) {
+                other.icon = .foreign
+            }
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["seed"])
+        #expect(!ids.contains("foreign"))
+    }
+
     // MARK: - Negative
 
     @Test("Ignores switch over unrelated enum in non-resource context")
