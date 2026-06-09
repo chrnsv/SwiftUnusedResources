@@ -9,7 +9,12 @@ final class SourceVisitor: SyntaxVisitor {
     private var hasSwiftUI = false
     
     private(set) var usages: [ExploreUsage] = []
-    private var typedLocals: [String: ExploreKind] = [:]
+
+    /// Lexical scope stack of resource-typed variables, used to attribute assignments
+    /// (`local = .asset`) to the right kind. The root scope holds file/type-level names;
+    /// a new scope is pushed per function-like / type body so a local in one scope does
+    /// not leak into same-named variables elsewhere.
+    private var scopes: [[String: ExploreKind]] = [[:]]
 
     @discardableResult
     init(
@@ -82,7 +87,7 @@ final class SourceVisitor: SyntaxVisitor {
             }
 
             if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
-                typedLocals[name] = kind
+                declareTypedVariable(name, kind)
             }
 
             if let value = binding.initializer?.value {
@@ -98,6 +103,8 @@ final class SourceVisitor: SyntaxVisitor {
     }
 
     override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+
         if let kind = typedKind(for: node.signature.returnClause?.type), let body = node.body {
             collectReturnedAssets(in: body.statements, with: kind)
         }
@@ -105,12 +112,22 @@ final class SourceVisitor: SyntaxVisitor {
         return .visitChildren
     }
 
+    override func visitPost(_ node: FunctionDeclSyntax) {
+        popScope()
+    }
+
     override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+
         if let kind = typedKind(for: node.signature?.returnClause?.type) {
             collectReturnedAssets(in: node.statements, with: kind)
         }
 
         return .visitChildren
+    }
+
+    override func visitPost(_ node: ClosureExprSyntax) {
+        popScope()
     }
 
     override func visit(_ node: SequenceExprSyntax) -> SyntaxVisitorContinueKind {
@@ -120,7 +137,7 @@ final class SourceVisitor: SyntaxVisitor {
             elements.count >= 3,
             elements[1].is(AssignmentExprSyntax.self),
             let lhs = elements.first?.as(DeclReferenceExprSyntax.self),
-            let kind = typedLocals[lhs.baseName.text]
+            let kind = resolveTypedVariable(lhs.baseName.text)
         else {
             return .visitChildren
         }
@@ -135,6 +152,69 @@ final class SourceVisitor: SyntaxVisitor {
         }
 
         return .visitChildren
+    }
+
+    override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: InitializerDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: AccessorDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: AccessorDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: ClassDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: StructDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: EnumDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: ActorDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: ExtensionDeclSyntax) {
+        popScope()
     }
 }
 
@@ -200,6 +280,33 @@ extension SourceVisitor {
         visitor.walk(usage)
 
         return visitor.members
+    }
+
+    private func pushScope() {
+        scopes.append([:])
+    }
+
+    private func popScope() {
+        if scopes.count > 1 {
+            scopes.removeLast()
+        }
+    }
+
+    /// Records a resource-typed variable in the current (innermost) scope.
+    private func declareTypedVariable(_ name: String, _ kind: ExploreKind) {
+        scopes[scopes.count - 1][name] = kind
+    }
+
+    /// Looks a variable up from the innermost scope outwards, so a local shadows
+    /// an enclosing declaration and names do not leak between sibling scopes.
+    private func resolveTypedVariable(_ name: String) -> ExploreKind? {
+        for scope in scopes.reversed() {
+            if let kind = scope[name] {
+                return kind
+            }
+        }
+
+        return nil
     }
 
     /// Resolves a type annotation/return clause to the resource kind it refers to,
@@ -439,6 +546,20 @@ private extension SourceVisitor {
             }
 
             names.append(node.declName.baseName.text)
+
+            return .skipChildren
+        }
+
+        override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+            // Only the called expression can be part of the value (e.g. `.asset.resized()`);
+            // arguments are unrelated expressions and must not be harvested as bare members.
+            walk(node.calledExpression)
+
+            return .skipChildren
+        }
+
+        override func visit(_ node: SubscriptCallExprSyntax) -> SyntaxVisitorContinueKind {
+            walk(node.calledExpression)
 
             return .skipChildren
         }

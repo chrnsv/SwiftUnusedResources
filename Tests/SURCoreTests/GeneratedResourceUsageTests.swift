@@ -210,6 +210,50 @@ struct GeneratedResourceUsageTests {
         #expect(Set(ids) == ["placeholder", "foo", "bar"])
     }
 
+    // MARK: - Precision
+
+    @Test("Ignores bare members passed as function-call arguments in a resource return")
+    func ignoresCallArguments() {
+        let source = """
+        func icon(for screen: Screen) -> ImageResource {
+            resolve(for: .settingsScreen)
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(ids.isEmpty)
+    }
+
+    @Test("Confines resource-typed locals to their own scope")
+    func scopedTypedLocals() {
+        let source = """
+        func a() -> ImageResource {
+            var icon: ImageResource = .home
+            return icon
+        }
+        func b() {
+            icon = .somethingElse
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["home"])
+        #expect(!ids.contains("somethingElse"))
+    }
+
+    @Test("Detects assignment to a resource-typed stored property from a method")
+    func storedPropertyAssignment() {
+        let source = """
+        class Library {
+            var icon: ImageResource = .seed
+
+            func update() {
+                icon = .reassigned
+            }
+        }
+        """
+        let ids = generatedIdentifiers(source, kind: .image)
+        #expect(Set(ids) == ["seed", "reassigned"])
+    }
+
     // MARK: - Negative
 
     @Test("Ignores switch over unrelated enum in non-resource context")
