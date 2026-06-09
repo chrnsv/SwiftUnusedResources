@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum ExploreUsage: Sendable {
+enum ExploreUsage: Sendable, Equatable {
     case string(_ value: String, _ kind: ExploreKind)
     case regexp(_ pattern: String, _ kind: ExploreKind)
     case rswift(_ identifier: String, _ kind: ExploreKind)

@@ -15,9 +15,16 @@ struct SwiftParser: Sendable {
         _ path: URL
     ) throws -> [ExploreUsage] {
         let file = try String(contentsOf: path)
-        let source = Parser.parse(source: file)
-        let visitor = SourceVisitor(showWarnings: showWarnings, kinds: kinds, path, source)
-        
+        return parse(source: file, at: path)
+    }
+
+    func parse(
+        source: String,
+        at path: URL = URL(fileURLWithPath: "<source>")
+    ) -> [ExploreUsage] {
+        let tree = Parser.parse(source: source)
+        let visitor = SourceVisitor(showWarnings: showWarnings, kinds: kinds, path, tree)
+
         return visitor.usages
     }
 }

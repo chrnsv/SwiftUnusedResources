@@ -26,4 +26,11 @@ extension ExploreKind {
         case .color: "Color"
         }
     }
+
+    var resourceClassName: String {
+        switch self {
+        case .image: "ImageResource"
+        case .color: "ColorResource"
+        }
+    }
 }
