@@ -1,6 +1,6 @@
 [tasks.build]
 description = "Build universal binary"
-run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64 --arch x86_64"
+run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64"
 
 [tasks.artifactbundle]
 description = "Create artifact bundle"
