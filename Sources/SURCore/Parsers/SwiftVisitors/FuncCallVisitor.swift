@@ -52,7 +52,9 @@ final class FuncCallVisitor: SyntaxVisitor {
                 
                 let regex = StringVisitor(tuple).parse()
                 if regex == ".*" {
-                    warn(url: url, node: tuple, "Couldn't guess match, please specify pattern")
+                    if !hasSkipComment(tuple) {
+                        warn(url: url, node: tuple, "Couldn't guess match, please specify pattern")
+                    }
                     return
                 }
 
@@ -84,7 +86,9 @@ final class FuncCallVisitor: SyntaxVisitor {
             let regex = StringVisitor(tuple).parse()
 
             if regex == ".*" {
-                warn(url: url, node: tuple, "Couldn't guess match, please specify pattern")
+                if !hasSkipComment(tuple) {
+                    warn(url: url, node: tuple, "Couldn't guess match, please specify pattern")
+                }
                 return
             }
 
@@ -151,8 +155,46 @@ final class FuncCallVisitor: SyntaxVisitor {
 
             p = p.parent!
         }
-        
+
         return nil
+    }
+
+    private func matchesSkip(text: String) -> Bool {
+        (try? NSRegularExpression(pattern: "^\\s*(?:\\/\\/|\\*+)?\\s*sur:\\s*skip\\s*$"))
+            .map { regex in
+                regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil
+            } ?? false
+    }
+
+    private func extractSkip(_ trivia: Trivia?) -> Bool {
+        guard let trivia else {
+            return false
+        }
+
+        for piece in trivia {
+            if case .lineComment(let c) = piece, matchesSkip(text: c) {
+                return true
+            }
+            else if case .blockComment(let c) = piece, matchesSkip(text: c) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func hasSkipComment(_ node: SyntaxProtocol) -> Bool {
+        var p: SyntaxProtocol = node
+
+        while p.parent != nil && p.syntaxNodeType != CodeBlockItemSyntax.self {
+            if extractSkip(p.leadingTrivia) || extractSkip(p.trailingTrivia) {
+                return true
+            }
+
+            p = p.parent!
+        }
+
+        return false
     }
     
     override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
@@ -162,7 +204,15 @@ final class FuncCallVisitor: SyntaxVisitor {
     }
     
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-        .skipChildren
+        // A module-qualified type like `UIKit.UIImage(named:)` is still the framework type;
+        // any other member-access callee (`view.background(...)`) is not a type reference.
+        if
+            let base = node.base?.as(DeclReferenceExprSyntax.self),
+            SourceVisitor.assetModules.contains(base.baseName.text) {
+            name = node.declName.baseName.text
+        }
+
+        return .skipChildren
     }
 }
 

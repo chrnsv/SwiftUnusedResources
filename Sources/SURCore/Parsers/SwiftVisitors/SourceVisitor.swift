@@ -4,24 +4,36 @@ import SwiftSyntax
 final class SourceVisitor: SyntaxVisitor {
     private let url: URL
     private let showWarnings: Bool
-    private let kinds: Set<ExploreKind>
+    let kinds: Set<ExploreKind>
+    private let memberCallKinds: [String: ExploreKind]
+    let propertyKinds: [String: ExploreKind]
     private var hasUIKit = false
     private var hasSwiftUI = false
-    
+
     private(set) var usages: [ExploreUsage] = []
-    
+
+    /// Lexical scope stack of resource-typed variables, used to attribute assignments
+    /// (`local = .asset`) to the right kind. The root scope holds file/type-level names;
+    /// a new scope is pushed per function-like / type body so a local in one scope does
+    /// not leak into same-named variables elsewhere.
+    var scopes: [[String: ExploreKind]] = [[:]]
+
     @discardableResult
     init(
         viewMode: SyntaxTreeViewMode = .sourceAccurate,
         showWarnings: Bool,
         kinds: Set<ExploreKind>,
+        memberCallKinds: [String: ExploreKind] = SourceVisitor.defaultMemberCallKinds,
+        propertyKinds: [String: ExploreKind] = SourceVisitor.defaultPropertyKinds,
         _ url: URL,
         _ node: SourceFileSyntax
     ) {
         self.url = url
         self.showWarnings = showWarnings
         self.kinds = kinds
-        
+        self.memberCallKinds = memberCallKinds
+        self.propertyKinds = propertyKinds
+
         super.init(viewMode: viewMode)
         walk(node)
     }
@@ -29,14 +41,14 @@ final class SourceVisitor: SyntaxVisitor {
     override func visit(_ node: ImportDeclSyntax) -> SyntaxVisitorContinueKind {
         // TODO: get import name without .description
         let imp = node.path.description
-        
-        if imp == "UIKit" || imp == "WatchKit" {
+
+        if Self.uiKitModules.contains(imp) {
             hasUIKit = true
         }
-        else if imp == "SwiftUI" {
+        else if Self.swiftUIModules.contains(imp) {
             hasSwiftUI = true
         }
-        
+
         return .skipChildren
     }
     
@@ -44,9 +56,11 @@ final class SourceVisitor: SyntaxVisitor {
         let newUsages = kinds
             .map { FuncCallVisitor(url, node, kind: $0, uiKit: hasUIKit, swiftUI: hasSwiftUI, showWarnings: showWarnings) }
             .flatMap { $0.usages }
-        
+
         usages.append(contentsOf: newUsages)
-        
+
+        collectMemberCallArguments(of: node)
+
         return super.visit(node)
     }
     
@@ -64,14 +78,174 @@ final class SourceVisitor: SyntaxVisitor {
     override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
         let newUsages = kinds
             .compactMap { findR(in: node, with: $0) ?? findGeneratedAsset(in: node, with: $0) }
-        
+
         guard !newUsages.isEmpty else {
             return .visitChildren
         }
-        
+
         usages.append(contentsOf: newUsages)
-        
+
         return .skipChildren
+    }
+
+    override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
+        for binding in node.bindings {
+            guard let kind = typedKind(for: binding.typeAnnotation?.type) else {
+                continue
+            }
+
+            if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
+                declareTypedVariable(name, kind)
+            }
+
+            if let value = binding.initializer?.value {
+                collectValue(value, with: kind)
+            }
+
+            if let statements = getterStatements(of: binding.accessorBlock) {
+                collectReturnedAssets(in: statements, with: kind)
+            }
+        }
+
+        return .visitChildren
+    }
+
+    override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+
+        collectParameterDefaults(node.signature.parameterClause.parameters)
+
+        if let kind = typedKind(for: node.signature.returnClause?.type), let body = node.body {
+            collectReturnedAssets(in: body.statements, with: kind)
+        }
+
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: FunctionDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+
+        if let kind = typedKind(for: node.signature?.returnClause?.type) {
+            collectReturnedAssets(in: node.statements, with: kind)
+        }
+
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: ClosureExprSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: SequenceExprSyntax) -> SyntaxVisitorContinueKind {
+        let elements = node.elements.array()
+
+        guard
+            elements.count >= 3,
+            elements[1].is(AssignmentExprSyntax.self),
+            let lhs = elements.first,
+            let kind = assignedKind(of: lhs)
+        else {
+            return .visitChildren
+        }
+
+        let rhs = Array(elements.dropFirst(2))
+
+        if rhs.count == 1 {
+            collectValue(rhs[0], with: kind)
+        }
+        else {
+            rhs.forEach { collectBareMembers(in: $0, with: kind) }
+        }
+
+        return .visitChildren
+    }
+
+    override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+
+        collectParameterDefaults(node.signature.parameterClause.parameters)
+
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: InitializerDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+
+        collectParameterDefaults(node.parameterClause.parameters)
+
+        if
+            let kind = typedKind(for: node.returnClause.type),
+            let statements = getterStatements(of: node.accessorBlock) {
+            collectReturnedAssets(in: statements, with: kind)
+        }
+
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: SubscriptDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: AccessorDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: AccessorDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: ClassDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: StructDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: EnumDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: ActorDeclSyntax) {
+        popScope()
+    }
+
+    override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: ExtensionDeclSyntax) {
+        popScope()
     }
 }
 
@@ -97,26 +271,106 @@ extension SourceVisitor {
         in node: DeclReferenceExprSyntax,
         with kind: ExploreKind
     ) -> ExploreUsage? {
-        guard [kind.uiClassName, kind.swiftUIClassName].contains(node.baseName.text) else {
+        guard Self.generatedClassKinds[node.baseName.text] == kind else {
             return nil
         }
-        
-        if let parent = node.parent?.as(FunctionCallExprSyntax.self) {
-            guard parent.arguments.count == 1, let member = parent.arguments.last?.expression.as(MemberAccessExprSyntax.self) else {
-                return nil
+
+        if let call = initializerCall(of: node) {
+            // collectValue resolves ternary / if / switch branches before recording, so
+            // `UIImage(resource: flag ? .a : .b)` records both assets. Usages are appended
+            // directly; a DeclRef has no children worth skipping, so returning nil is fine.
+            if call.arguments.count == 1, let argument = call.arguments.first {
+                collectValue(argument.expression, with: kind)
             }
-            
-            return .generated(member.declName.baseName.text, kind)
+
+            return nil
         }
         else {
-            let members = members(in: node)
-            
-            guard members.count == 2, let name = members.last else {
+            var members = members(in: node).array()
+
+            if let first = members.first, Self.assetModules.contains(first) {
+                members.removeFirst()
+            }
+
+            // `members.first == baseName` rejects chains rooted in an unknown namespace:
+            // in `MyKit.Image.star` the first member is `MyKit`, so `Image` there is some
+            // custom type, not the SwiftUI one.
+            guard members.count >= 2, members.first == node.baseName.text else {
                 return nil
             }
-            
+
+            let name = members[1]
+
+            // Asset symbols can never be named `init`; `UIImage.init(named:)` is not an asset.
+            guard name != "init" else {
+                return nil
+            }
+
             return .generated(name, kind)
         }
+    }
+
+    /// Records bare members passed to known color/image-taking member calls. Only unlabeled
+    /// arguments and arguments labeled `color` are collected, so control labels
+    /// (`for:`, `alignment:`, `in:`, …) are never mistaken for assets.
+    private func collectMemberCallArguments(of node: FunctionCallExprSyntax) {
+        guard
+            let member = node.calledExpression.as(MemberAccessExprSyntax.self),
+            let kind = memberCallKinds[member.declName.baseName.text],
+            kinds.contains(kind)
+        else {
+            return
+        }
+
+        for argument in node.arguments {
+            guard argument.label == nil || argument.label?.text == "color" else {
+                continue
+            }
+
+            collectShallowBareMembers(in: argument.expression, with: kind)
+        }
+    }
+
+    /// Records the innermost bare member of each resolved leaf (`.brand`, `.brand.opacity(0.5)`,
+    /// `[.a, .b]`, `flag ? .a : .b`) WITHOUT the deep subtree walk used for typed contexts —
+    /// view-builder arguments like `.background(VStack { ... })` must contribute nothing.
+    private func collectShallowBareMembers(in expression: ExprSyntax, with kind: ExploreKind) {
+        for leaf in resolveTail(expression) {
+            if let array = leaf.as(ArrayExprSyntax.self) {
+                array.elements.forEach { collectShallowBareMembers(in: $0.expression, with: kind) }
+            }
+            else if let sequence = leaf.as(SequenceExprSyntax.self) {
+                // The parser does not fold operators, so a ternary argument arrives as a flat
+                // sequence: `flag ? .a : .b` → [flag, UnresolvedTernary(.a), .b]. Collect from
+                // each operand; the unresolved-ternary element carries the `then` branch.
+                for element in sequence.elements {
+                    let unwrapped = element.as(UnresolvedTernaryExprSyntax.self)?.thenExpression ?? element
+                    collectShallowBareMembers(in: unwrapped, with: kind)
+                }
+            }
+            else if let name = innermostBareMember(of: leaf) {
+                usages.append(.generated(name, kind))
+            }
+        }
+    }
+
+    /// The call node when `node` is the called type of an initializer call — either plain
+    /// `UIImage(...)` or module-qualified `SwiftUI.Image(...)`.
+    private func initializerCall(of node: DeclReferenceExprSyntax) -> FunctionCallExprSyntax? {
+        if let call = node.parent?.as(FunctionCallExprSyntax.self) {
+            return call
+        }
+
+        guard
+            let member = node.parent?.as(MemberAccessExprSyntax.self),
+            member.declName.id == node.id,
+            let base = member.base?.as(DeclReferenceExprSyntax.self),
+            Self.assetModules.contains(base.baseName.text)
+        else {
+            return nil
+        }
+
+        return member.parent?.as(FunctionCallExprSyntax.self)
     }
     
     private func members(in node: DeclReferenceExprSyntax) -> some RandomAccessCollection<String> {
@@ -133,10 +387,46 @@ extension SourceVisitor {
         }
         
         let visitor = MemberVisitor(viewMode: viewMode)
-        
+
         visitor.walk(usage)
-        
+
         return visitor.members
+    }
+
+    /// Collects every asset returned by a body — both explicit `return`s (anywhere in the body,
+    /// excluding nested scopes) and the implicit-return trailing expression — resolving through
+    /// `if` / `switch` / ternary branches without ever touching conditions or `case` patterns.
+    private func collectReturnedAssets(in statements: CodeBlockItemListSyntax, with kind: ExploreKind) {
+        let visitor = ReturnVisitor(viewMode: viewMode)
+        statements.forEach { visitor.walk($0) }
+
+        let leaves = visitor.expressions.flatMap { resolveTail($0) } + implicitTail(of: statements)
+
+        leaves.forEach { collectBareMembers(in: $0, with: kind) }
+    }
+
+    /// Records assets used as default values of resource-typed parameters,
+    /// e.g. `func makeBadge(icon: UIImage = .star)`.
+    private func collectParameterDefaults(_ parameters: FunctionParameterListSyntax) {
+        for parameter in parameters {
+            if let kind = typedKind(for: parameter.type), let value = parameter.defaultValue?.value {
+                collectValue(value, with: kind)
+            }
+        }
+    }
+
+    /// Resolves a value expression (initializer / assignment RHS) and records its bare members.
+    private func collectValue(_ expression: ExprSyntax, with kind: ExploreKind) {
+        resolveTail(expression).forEach { collectBareMembers(in: $0, with: kind) }
+    }
+
+    /// Records every bare member access (`.assetName`, i.e. with no base) found in `expression`
+    /// as a `.generated` usage. Handles array literals and member chains.
+    private func collectBareMembers(in expression: some SyntaxProtocol, with kind: ExploreKind) {
+        let visitor = BareMemberVisitor(viewMode: viewMode)
+        visitor.walk(expression)
+
+        usages.append(contentsOf: visitor.names.map { .generated($0, kind) })
     }
 }
 
@@ -146,18 +436,6 @@ private extension ExploreKind {
         case "imageLiteral": self = .image
         case "colorLiteral": self = .color
         default: return nil
-        }
-    }
-}
-
-private extension SourceVisitor {
-    final class MemberVisitor: SyntaxVisitor {
-        private(set) var members: [String] = []
-        
-        override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
-            members.append(node.baseName.text)
-            
-            return super.visit(node)
         }
     }
 }

@@ -118,3 +118,26 @@ exclude:
   assets:
     - <name of xcassets>
 ```
+
+### Custom symbols
+
+The tool ships with a built-in list of SwiftUI modifiers, UIKit setters
+(`.foregroundColor(.brand)`, `setImage(.star, for: .normal)`, …) and UIKit properties
+(`label.textColor = .brand`, `imageView.image = .star`, …) whose arguments are treated as
+generated asset symbols. If your project uses custom APIs in the same style, extend the
+lists in `sur.yml` so assets passed to them are not reported as unused:
+
+```yaml
+symbols:
+  calls:        # member calls: view.neonGlow(.brandPink), button.setCustomIcon(.star, for: .normal)
+    color:
+      - neonGlow
+    image:
+      - setCustomIcon
+  properties:   # property assignments: theme.brandColor = .accent
+    color:
+      - brandColor
+```
+
+Only unlabeled arguments and arguments labeled `color:` of listed calls are collected, so
+control labels (`for:`, `alignment:`, …) are never mistaken for assets.

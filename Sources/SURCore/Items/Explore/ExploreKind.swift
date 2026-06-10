@@ -26,4 +26,16 @@ extension ExploreKind {
         case .color: "Color"
         }
     }
+
+    var resourceClassName: String {
+        switch self {
+        case .image: "ImageResource"
+        case .color: "ColorResource"
+        }
+    }
+
+    /// All type names Xcode extends with generated asset symbol properties for this kind.
+    var generatedClassNames: [String] {
+        [uiClassName, swiftUIClassName, resourceClassName]
+    }
 }

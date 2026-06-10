@@ -5,8 +5,8 @@
 //  Created by Aleksandr Chernousov on 25/09/2025.
 //
 
-import Foundation
 import ArgumentParser
+import Foundation
 import PathKit
 import Rainbow
 import SURCore
@@ -98,6 +98,6 @@ struct RToXcode: AsyncParsableCommand {
 
 extension ValidationError: @retroactive LocalizedError {
     public var errorDescription: String? {
-        return message
+        message
     }
 }

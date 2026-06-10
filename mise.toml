@@ -1,6 +1,6 @@
 [tasks.build]
 description = "Build universal binary"
-run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64 --arch x86_64"
+run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64"
 
 [tasks.artifactbundle]
 description = "Create artifact bundle"
@@ -18,7 +18,7 @@ fi
 echo "Creating artifact bundle for SUR version $VERSION..."
 
 # Get executable path
-BIN_PATH=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
+BIN_PATH=$(swift build -c release --arch arm64 --show-bin-path)
 EXECUTABLE_PATH="$BIN_PATH/sur"
 
 # Define bundle paths
@@ -40,7 +40,7 @@ cat <<EOF > "$BUNDLE_DIR/info.json"
             "variants": [
                 {
                     "path": "bin/sur",
-                    "supportedTriples": ["x86_64-apple-macosx", "arm64-apple-macosx"]
+                    "supportedTriples": ["arm64-apple-macosx"]
                 }
             ]
         }
