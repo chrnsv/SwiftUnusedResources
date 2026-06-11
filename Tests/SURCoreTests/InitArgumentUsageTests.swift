@@ -15,16 +15,19 @@ struct InitArgumentUsageTests {
     }
 
     private func images(_ source: String) -> [String] {
-        usages(source).compactMap {
-            if case let .generated(identifier, .image) = $0 { return identifier }
-            return nil
-        }
+        identifiers(in: source, of: .image)
     }
 
     private func colors(_ source: String) -> [String] {
-        usages(source).compactMap {
-            if case let .generated(identifier, .color) = $0 { return identifier }
-            return nil
+        identifiers(in: source, of: .color)
+    }
+
+    private func identifiers(in source: String, of kind: ExploreKind) -> [String] {
+        usages(source).compactMap { usage in
+            guard case let .generated(identifier, usageKind) = usage, usageKind == kind else {
+                return nil
+            }
+            return identifier
         }
     }
 
@@ -92,6 +95,25 @@ struct InitArgumentUsageTests {
         let source = """
         struct S { let stored: ImageResource; init(_ icon: ImageResource) { stored = icon } }
         let x = S(.star)
+        """
+        #expect(images(source) == ["star"])
+    }
+
+    @Test("Distinguishes multiple positional parameters of different kinds")
+    func multiplePositionalParameters() {
+        let source = """
+        struct S { let img: ImageResource; let col: ColorResource; init(_ img: ImageResource, _ col: ColorResource) { self.img = img; self.col = col } }
+        let x = S(.cat, .brand)
+        """
+        #expect(images(source) == ["cat"])
+        #expect(colors(source) == ["brand"])
+    }
+
+    @Test("Resolves a type whose name has a leading underscore")
+    func underscorePrefixedType() {
+        let source = """
+        struct _InternalStyle { let icon: ImageResource }
+        let x = _InternalStyle(icon: .star)
         """
         #expect(images(source) == ["star"])
     }

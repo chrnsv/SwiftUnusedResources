@@ -57,6 +57,7 @@ struct SwiftParser: Sendable {
         )
 
         return SwiftParseResult(
+            path: path.path,
             usages: visitor.usages,
             typeRegistry: visitor.typeRegistry,
             pendingInits: visitor.pendingInits

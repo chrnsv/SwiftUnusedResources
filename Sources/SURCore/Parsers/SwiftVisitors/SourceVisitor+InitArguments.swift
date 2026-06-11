@@ -1,11 +1,35 @@
 import SwiftSyntax
 
+/// How an initializer-style callee resolves: an explicit type (`Foo(...)`, `Foo.init(...)`,
+/// `Outer.Inner(...)`, `Test.image(...)`) or an inferred leading-dot call (`.init(...)`,
+/// `.image(...)`) whose type comes from context. `selector` is `"init"` or a factory method name.
+private enum InitCalleeKind {
+    case explicit(typeName: String, selector: String)
+    case inferred(selector: String)
+}
+
+/// The synthetic registry/call label for the positional (`_`) parameter/argument at `index`.
+/// Keyed by position so distinct positional parameters never collide under a shared empty label.
+private func positionalLabel(_ index: Int) -> String {
+    "#\(index)"
+}
+
 /// Collection of user-type constructor signatures and constructor call sites, used to resolve a
 /// resource passed to a user-defined type's initializer or static factory — `CardStyle(icon: .star)`,
 /// a type-inferred `Foo(test: .init(image: .cat))`, or a static factory `Foo(test: .image(.frog))`.
 /// The registry and pending calls are aggregated and resolved cross-file by `Explorer`, since a
 /// declaration and its call site (and its extensions) can live in different files.
 extension SourceVisitor {
+    /// Type names that can never carry a resource, so they are not recorded as `.named` parameters
+    /// (which would only bloat the registry). Kept deliberately conservative — only stdlib scalars.
+    private static let nonResourceTypeNames: Set<String> = [
+        "String", "Substring", "Character", "Bool",
+        "Int", "Int8", "Int16", "Int32", "Int64",
+        "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
+        "Double", "Float", "Float16", "CGFloat",
+        "Date", "URL", "Data", "UUID", "TimeInterval", "Decimal",
+    ]
+
     /// Records a type's constructors into `typeRegistry`: its initializers (selector `"init"`),
     /// a struct's synthesized memberwise init when it declares none, and any static factory methods
     /// returning `Self` or the type itself (selector = method name). Called for the type's own
@@ -16,7 +40,7 @@ extension SourceVisitor {
         members: MemberBlockItemListSyntax,
         memberwiseFallback: Bool
     ) {
-        var selectors: [String: [String: InitParameterType]] = [:]
+        var selectors: TypeConstructors = [:]
 
         let initializers = members.compactMap { $0.decl.as(InitializerDeclSyntax.self) }
 
@@ -52,7 +76,7 @@ extension SourceVisitor {
             return
         }
 
-        let pending = buildPendingInit(node, fallbackType: typeName, selector: selector)
+        let pending = buildPendingInit(node, typeName: typeName, selector: selector)
 
         if !pending.arguments.isEmpty {
             pendingInits.append(pending)
@@ -64,17 +88,18 @@ extension SourceVisitor {
     /// parameter default), pinning them to the resolved type. Explicit calls are left to
     /// `collectPendingInit`, which captures them via the visitor's own traversal.
     func collectNamedTypeValue(_ expression: ExprSyntax, expectedType: String) {
-        for leaf in resolveTail(expression) {
-            if let array = leaf.as(ArrayExprSyntax.self) {
-                array.elements.forEach { collectNamedTypeValue($0.expression, expectedType: expectedType) }
-            }
-            else if
+        for leaf in shallowLeaves(of: expression) {
+            guard
                 let call = leaf.as(FunctionCallExprSyntax.self),
-                case .inferred(let selector)? = initCalleeKind(of: call.calledExpression) {
-                let pending = buildPendingInit(call, fallbackType: expectedType, selector: selector)
-                if !pending.arguments.isEmpty {
-                    pendingInits.append(pending)
-                }
+                case .inferred(let selector)? = initCalleeKind(of: call.calledExpression)
+            else {
+                continue
+            }
+
+            let pending = buildPendingInit(call, typeName: expectedType, selector: selector)
+
+            if !pending.arguments.isEmpty {
+                pendingInits.append(pending)
             }
         }
     }
@@ -96,7 +121,11 @@ extension SourceVisitor {
             return nil
         }
 
-        return name == "Self" ? enclosingTypeNames.last : name
+        if name == "Self" {
+            return enclosingTypeNames.last.flatMap { $0 }
+        }
+
+        return name
     }
 
     /// The concrete type a constrained protocol extension pins `Self` to via `where Self == X`
@@ -125,25 +154,38 @@ extension SourceVisitor {
         return defaultName
     }
 
+    /// The simple name of a (non-resource) named type, unwrapping `Optional` / `Array` / IUO /
+    /// `any` / `some` sugar and generic forms, and taking the final component of a qualified type.
+    func namedType(for type: TypeSyntax?) -> String? {
+        guard let leaf = unwrappedType(type) else {
+            return nil
+        }
+
+        if let identifier = leaf.as(IdentifierTypeSyntax.self) {
+            let name = identifier.name.text
+            return name == "Array" || name == "Optional" ? nil : name
+        }
+
+        if let member = leaf.as(MemberTypeSyntax.self) {
+            return member.name.text
+        }
+
+        return nil
+    }
+
     // MARK: - Building
 
     /// Builds a `PendingInitCall` from a constructor call, recursively capturing nested inferred
-    /// leading-dot arguments. `fallbackType` supplies the type for an inferred callee (from the
-    /// enclosing parameter or annotation); an explicit callee uses its own type name.
+    /// leading-dot arguments. `typeName` is the resolved type (explicit name, the inferred context
+    /// type, or `nil` for a nested inferred call resolved from its parameter at resolution time).
     private func buildPendingInit(
         _ call: FunctionCallExprSyntax,
-        fallbackType: String?,
+        typeName: String?,
         selector: String
     ) -> PendingInitCall {
-        let typeName: String?
-        switch initCalleeKind(of: call.calledExpression) {
-        case .explicit(let name, _): typeName = name
-        case .inferred, nil: typeName = fallbackType
-        }
-
         var arguments: [PendingInitArgument] = []
 
-        for argument in call.arguments {
+        for (index, argument) in call.arguments.enumerated() {
             var members: [String] = []
             var nestedInits: [PendingInitCall] = []
             resolveArgumentValue(argument.expression, members: &members, nestedInits: &nestedInits)
@@ -154,7 +196,7 @@ extension SourceVisitor {
 
             arguments.append(
                 PendingInitArgument(
-                    label: argument.label?.text ?? "",
+                    label: argument.label?.text ?? positionalLabel(index),
                     members: members,
                     nestedInits: nestedInits
                 )
@@ -172,23 +214,11 @@ extension SourceVisitor {
         members: inout [String],
         nestedInits: inout [PendingInitCall]
     ) {
-        for leaf in resolveTail(expression) {
-            if let array = leaf.as(ArrayExprSyntax.self) {
-                for element in array.elements {
-                    resolveArgumentValue(element.expression, members: &members, nestedInits: &nestedInits)
-                }
-            }
-            else if let sequence = leaf.as(SequenceExprSyntax.self) {
-                // Unfolded ternary argument: `flag ? .a : .b` arrives as a flat sequence whose
-                // `then` branch hides inside an UnresolvedTernaryExprSyntax element.
-                for element in sequence.elements {
-                    let unwrapped = element.as(UnresolvedTernaryExprSyntax.self)?.thenExpression ?? element
-                    resolveArgumentValue(unwrapped, members: &members, nestedInits: &nestedInits)
-                }
-            }
-            else if let call = leaf.as(FunctionCallExprSyntax.self),
-                    case .inferred(let selector)? = initCalleeKind(of: call.calledExpression) {
-                nestedInits.append(buildPendingInit(call, fallbackType: nil, selector: selector))
+        for leaf in shallowLeaves(of: expression) {
+            if
+                let call = leaf.as(FunctionCallExprSyntax.self),
+                case .inferred(let selector)? = initCalleeKind(of: call.calledExpression) {
+                nestedInits.append(buildPendingInit(call, typeName: nil, selector: selector))
             }
             else if let name = innermostBareMember(of: leaf) {
                 members.append(name)
@@ -199,15 +229,17 @@ extension SourceVisitor {
     // MARK: - Signature helpers
 
     /// The `label → parameter type` map of a parameter list, keeping only resource/named-typed ones.
-    private func parameterTypes(of parameters: FunctionParameterListSyntax) -> [String: InitParameterType] {
-        var result: [String: InitParameterType] = [:]
+    private func parameterTypes(of parameters: FunctionParameterListSyntax) -> InitParameterMap {
+        var result: InitParameterMap = [:]
 
-        for parameter in parameters {
+        for (index, parameter) in parameters.enumerated() {
             guard let type = parameterType(for: parameter.type) else {
                 continue
             }
 
-            let label = parameter.firstName.tokenKind == .wildcard ? "" : parameter.firstName.text
+            let label = parameter.firstName.tokenKind == .wildcard
+                ? positionalLabel(index)
+                : parameter.firstName.text
             result[label] = type
         }
 
@@ -216,8 +248,8 @@ extension SourceVisitor {
 
     /// The memberwise initializer's `label → parameter type` map, from a struct's stored properties.
     /// Computed properties and `let`s with a default value never appear in the synthesized init.
-    private func memberwiseParameters(of members: MemberBlockItemListSyntax) -> [String: InitParameterType] {
-        var result: [String: InitParameterType] = [:]
+    private func memberwiseParameters(of members: MemberBlockItemListSyntax) -> InitParameterMap {
+        var result: InitParameterMap = [:]
 
         for member in members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else {
@@ -250,8 +282,8 @@ extension SourceVisitor {
     private func staticFactories(
         of members: MemberBlockItemListSyntax,
         returning typeName: String
-    ) -> [(selector: String, parameters: [String: InitParameterType])] {
-        var factories: [(String, [String: InitParameterType])] = []
+    ) -> [(selector: String, parameters: InitParameterMap)] {
+        var factories: [(String, InitParameterMap)] = []
 
         for member in members {
             guard
@@ -280,94 +312,35 @@ extension SourceVisitor {
     // MARK: - Type helpers
 
     /// The `InitParameterType` for a parameter/property type: a resource kind if it resolves to
-    /// one, else the simple user-type name for nested constructor resolution.
+    /// one, else the simple user-type name for nested constructor resolution (excluding stdlib
+    /// scalars that can never carry a resource).
     private func parameterType(for type: TypeSyntax?) -> InitParameterType? {
         if let kind = typedKind(for: type) {
             return .resource(kind)
         }
 
-        if let name = namedType(for: type) {
+        if let name = namedType(for: type), !Self.nonResourceTypeNames.contains(name) {
             return .named(name)
         }
 
         return nil
     }
 
-    /// The simple name of a (non-resource) named type, unwrapping `Optional` / `Array` / IUO
-    /// sugar and generic forms, and taking the final component of a module-qualified type.
-    func namedType(for type: TypeSyntax?) -> String? {
-        guard let type else {
-            return nil
-        }
-
-        if let optional = type.as(OptionalTypeSyntax.self) {
-            return namedType(for: optional.wrappedType)
-        }
-
-        if let optional = type.as(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
-            return namedType(for: optional.wrappedType)
-        }
-
-        if let array = type.as(ArrayTypeSyntax.self) {
-            return namedType(for: array.element)
-        }
-
-        // `any TestProtocol` / `some TestProtocol` → the constraint's name.
-        if let someOrAny = type.as(SomeOrAnyTypeSyntax.self) {
-            return namedType(for: someOrAny.constraint)
-        }
-
-        if let identifier = type.as(IdentifierTypeSyntax.self) {
-            let name = identifier.name.text
-
-            if name == "Array" || name == "Optional" {
-                if let argument = identifier.genericArgumentClause?.arguments.first?.argument.as(TypeSyntax.self) {
-                    return namedType(for: argument)
-                }
-                return nil
-            }
-
-            return name
-        }
-
-        if let member = type.as(MemberTypeSyntax.self) {
-            return member.name.text
-        }
-
-        return nil
-    }
-
-    /// Whether a property's accessor block makes it computed (a shorthand or explicit `get`),
-    /// as opposed to a stored property with only `willSet` / `didSet` observers.
+    /// Whether a property's accessor block makes it computed (a getter), as opposed to a stored
+    /// property with only `willSet` / `didSet` observers. Shares the getter probing of
+    /// `getterStatements(of:)`.
     private func isComputedProperty(_ accessorBlock: AccessorBlockSyntax?) -> Bool {
-        guard let accessorBlock else {
-            return false
-        }
-
-        switch accessorBlock.accessors {
-        case .getter:
-            return true
-
-        case .accessors(let accessors):
-            return accessors.contains { $0.accessorSpecifier.tokenKind == .keyword(.get) }
-        }
+        getterStatements(of: accessorBlock) != nil
     }
 
     // MARK: - Callee classification
-
-    private enum InitCalleeKind {
-        /// `Foo(...)`, `Foo.init(...)`, `Outer.Inner(...)`, `Test.image(...)` — type and selector known.
-        case explicit(typeName: String, selector: String)
-        /// `.init(...)`, `.image(...)` — the type is inferred from context; the selector is known.
-        case inferred(selector: String)
-    }
 
     /// Classifies a constructor-call callee, or returns `nil` when the call is not a constructor
     /// call we resolve (plain functions, instance methods, deeper member chains).
     private func initCalleeKind(of callee: ExprSyntax) -> InitCalleeKind? {
         if let reference = callee.as(DeclReferenceExprSyntax.self) {
             let name = reference.baseName.text
-            return name.first?.isUppercase == true ? .explicit(typeName: name, selector: "init") : nil
+            return isTypeName(name) ? .explicit(typeName: name, selector: "init") : nil
         }
 
         guard let member = callee.as(MemberAccessExprSyntax.self) else {
@@ -382,12 +355,12 @@ extension SourceVisitor {
                 return .inferred(selector: "init")
             }
             // `.image(...)` — a static factory; uppercase leading-dot calls are out of scope.
-            return name.first?.isLowercase == true ? .inferred(selector: name) : nil
+            return isTypeName(name) ? nil : .inferred(selector: name)
         }
 
-        // Qualified call: the base must name a type (uppercase final component); a lowercase base
-        // (`view.tint(...)`) is an instance method handled elsewhere.
-        guard let baseName = baseTypeName(of: base), baseName.first?.isUppercase == true else {
+        // Qualified call: the base must name a type; a value base (`view.tint(...)`) is an instance
+        // method handled elsewhere.
+        guard let baseName = baseTypeName(of: base), isTypeName(baseName) else {
             return nil
         }
 
@@ -395,13 +368,19 @@ extension SourceVisitor {
             return .explicit(typeName: baseName, selector: "init")
         }
 
-        // `Outer.Inner(...)` — an uppercase final component is a nested type's initializer;
-        // `Test.image(...)` — a lowercase one is a static factory on the base type.
-        if name.first?.isUppercase == true {
+        // `Outer.Inner(...)` — a type-named final component is a nested type's initializer;
+        // `Test.image(...)` — a method-named one is a static factory on the base type.
+        if isTypeName(name) {
             return .explicit(typeName: name, selector: "init")
         }
 
         return .explicit(typeName: baseName, selector: name)
+    }
+
+    /// Whether an identifier names a type, tolerating leading underscores (`_InternalStyle`) so
+    /// generated/internal types are not mistaken for instances.
+    private func isTypeName(_ name: String) -> Bool {
+        name.drop { $0 == "_" }.first?.isUppercase == true
     }
 
     /// The final type-name component of a qualified base (`X` in `X.init`, `Type` in `Module.Type.f`).

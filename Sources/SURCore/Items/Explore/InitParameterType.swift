@@ -12,10 +12,16 @@ enum InitParameterType: Sendable, Equatable {
     case named(String)
 }
 
-/// The set of constructors a type exposes to asset detection, keyed by type name. Each type maps
-/// a *selector* — `"init"` for an initializer/memberwise init, or a static factory method's name —
-/// to that constructor's `label → parameter type` map. Built per file and merged across files.
-typealias InitializerRegistry = [String: [String: [String: InitParameterType]]]
+/// One constructor's parameters, keyed by argument label (or `#0`, `#1`, … for positional params).
+typealias InitParameterMap = [String: InitParameterType]
+
+/// The constructors a type exposes, keyed by *selector* — `"init"` for an initializer/memberwise
+/// init, or a static factory method's name.
+typealias TypeConstructors = [String: InitParameterMap]
+
+/// The set of constructors every known type exposes to asset detection, keyed by type name.
+/// Built per file and merged across files.
+typealias InitializerRegistry = [String: TypeConstructors]
 
 /// Deep-merges one initializer registry into another (`type → selector → label`), the later
 /// value winning on a conflict — used to combine per-file registries and a type's own
@@ -51,6 +57,8 @@ struct PendingInitArgument: Sendable, Equatable {
 /// Everything one parsed Swift file contributes: the asset usages it directly proves, the
 /// initializer signatures it declares, and the pending init call sites awaiting resolution.
 struct SwiftParseResult: Sendable {
+    /// Source file path, used to merge per-file registries in a deterministic order.
+    var path: String
     var usages: [ExploreUsage]
     var typeRegistry: InitializerRegistry
     var pendingInits: [PendingInitCall]

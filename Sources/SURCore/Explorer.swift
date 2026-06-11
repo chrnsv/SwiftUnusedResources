@@ -350,7 +350,9 @@ public final class Explorer {
 
         var usages: [ExploreUsage] = []
 
-        for result in results {
+        // Sort by path so the registry merge (later-wins on conflicting same-named types) is
+        // deterministic, rather than depending on nondeterministic task-group completion order.
+        for result in results.sorted(by: { $0.path < $1.path }) {
             usages.append(contentsOf: result.usages)
             pendingInits.append(contentsOf: result.pendingInits)
             mergeInitializerRegistry(result.typeRegistry, into: &typeRegistry)
