@@ -1,5 +1,5 @@
 [tasks.build]
-description = "Build universal binary"
+description = "Build release binary"
 run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64"
 
 [tasks.artifactbundle]
@@ -89,7 +89,7 @@ echo "Successfully updated version to $VERSION"
 '''
 
 [tasks.publish]
-description = "Publish release to GitHub"
+description = "Publish release to GitHub (draft → inspect → finalize)"
 run = '''
 #!/usr/bin/env bash
 set -e
@@ -107,11 +107,49 @@ if [ ! -f "$BUNDLE_ZIP" ]; then
 fi
 
 if ! command -v gh &> /dev/null; then
-    echo "Error: GitHub CLI (gh) is not installed."
+    echo "Error: GitHub CLI (gh) is not installed. Install with: brew install gh"
     exit 1
 fi
 
-COMMIT=$(git rev-parse HEAD)
-echo "Publishing release $VERSION (target: $COMMIT) to GitHub..."
-gh release create "$VERSION" "$BUNDLE_ZIP" --target "$COMMIT" --title "$VERSION" --generate-notes
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is not installed. Install with: brew install jq"
+    exit 1
+fi
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Step 1: Create a draft release and upload the artifact
+echo "Creating draft release $VERSION (target: $BRANCH)..."
+gh release create "$VERSION" "$BUNDLE_ZIP" --target "$BRANCH" --title "$VERSION" --generate-notes --draft
+
+# Step 2: Extract asset URL and update Package.swift
+echo ""
+ASSET_URL=$(gh release view "$VERSION" --json assets \
+  | jq -r --arg name "$BUNDLE_ZIP" '.assets[] | select(.name == $name) | .url')
+
+if [ -z "$ASSET_URL" ]; then
+    echo "Error: Could not retrieve asset URL for $BUNDLE_ZIP from the draft release."
+    exit 1
+fi
+
+echo "Asset URL: $ASSET_URL"
+
+CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
+echo "Checksum:  $CHECKSUM"
+
+sed -i '' -E "s|url: \"https://[^\"]+\"|url: \"$ASSET_URL\"|" Package.swift
+sed -i '' -E "s/(checksum: \")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
+echo "Package.swift updated."
+
+# Step 3: Commit and push Package.swift
+git add Package.swift
+git commit -m "chore: update binaryTarget URL and checksum for $VERSION"
+git push
+
+# Step 4: Finalize the release
+echo ""
+echo "Finalizing release $VERSION..."
+gh release edit "$VERSION" --draft=false
+
+echo "Release $VERSION published successfully."
 '''
