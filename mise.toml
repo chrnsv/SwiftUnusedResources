@@ -92,7 +92,7 @@ echo "Successfully updated version to $VERSION"
 '''
 
 [tasks.publish]
-description = "Publish release to GitHub (draft → inspect → finalize)"
+description = "Publish release to GitHub (upstream)"
 run = '''
 #!/usr/bin/env bash
 set -e
@@ -114,61 +114,32 @@ if ! command -v gh &> /dev/null; then
     exit 1
 fi
 
-if ! command -v jq &> /dev/null; then
-    echo "Error: jq is not installed. Install with: brew install jq"
-    exit 1
-fi
-
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-# Publish the release to the upstream canonical repo (mugabe). Releases are
-# anchored to an explicit commit SHA, so target_commitish always resolves to a
-# commit that exists in upstream — avoiding "HTTP 422: Invalid target_commitish".
 REMOTE="upstream"
 REPO=$(git remote get-url "$REMOTE" | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-# The commit must exist in upstream before it can be referenced as a SHA.
-echo "Pushing $BRANCH to $REPO..."
-git push "$REMOTE" "$BRANCH"
-
-# Step 1: Create a draft release and upload the artifact. The target is
-# provisional here; for a draft no tag is created yet — it is set for real at
-# finalize time (Step 4), after Package.swift is updated and pushed.
-echo "Creating draft release $VERSION in $REPO..."
-gh release create "$VERSION" "$BUNDLE_ZIP" --repo "$REPO" --target "$(git rev-parse HEAD)" --title "$VERSION" --generate-notes --draft
-
-# Step 2: Extract asset URL and update Package.swift
-echo ""
-ASSET_URL=$(gh release view "$VERSION" --repo "$REPO" --json assets \
-  | jq -r --arg name "$BUNDLE_ZIP" '.assets[] | select(.name == $name) | .url')
-
-if [ -z "$ASSET_URL" ]; then
-    echo "Error: Could not retrieve asset URL for $BUNDLE_ZIP from the draft release."
-    exit 1
-fi
-
-echo "Asset URL: $ASSET_URL"
-
+# The asset download URL is deterministic — it is derived from the tag name and
+# the file name — so it can be written into Package.swift before the release
+# exists. No draft, no API round-trip, no second commit.
+ASSET_URL="https://github.com/$REPO/releases/download/$VERSION/$BUNDLE_ZIP"
 CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
+echo "Asset URL: $ASSET_URL"
 echo "Checksum:  $CHECKSUM"
 
-# Only rewrite the binaryTarget URL (a GitHub *releases* URL), never the
-# dependency .package(url:) entries (which point at .git repos).
+# Point the binaryTarget at the upcoming release asset. Only the binaryTarget
+# URL (a GitHub *releases* URL) is rewritten, never the .package(url:) deps.
 sed -i '' -E "s|url: \"https://[^\"]*releases[^\"]*\"|url: \"$ASSET_URL\"|" Package.swift
 sed -i '' -E "s/(checksum: \")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
 echo "Package.swift updated."
 
-# Step 3: Commit and push Package.swift to upstream
+# Commit and push so the release tag lands on the commit referencing the asset.
 git add Package.swift
 git commit -m "chore: update binaryTarget URL and checksum for $VERSION"
 git push "$REMOTE" "$BRANCH"
 
-# Step 4: Finalize the release, tagging the commit that contains the updated
-# Package.swift. Publishing the draft creates the tag at this SHA in upstream.
-RELEASE_SHA=$(git rev-parse HEAD)
-echo ""
-echo "Finalizing release $VERSION at $RELEASE_SHA..."
-gh release edit "$VERSION" --repo "$REPO" --target "$RELEASE_SHA" --draft=false
+# Create the release: gh tags this commit and uploads the artifact in one step.
+echo "Creating release $VERSION in $REPO..."
+gh release create "$VERSION" "$BUNDLE_ZIP" --repo "$REPO" --target "$(git rev-parse HEAD)" --title "$VERSION" --generate-notes
 
 echo "Release $VERSION published successfully."
 '''
