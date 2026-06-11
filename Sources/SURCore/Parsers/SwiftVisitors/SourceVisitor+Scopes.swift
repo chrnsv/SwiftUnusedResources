@@ -74,36 +74,56 @@ extension SourceVisitor {
     /// Resolves a type annotation/return clause to the resource kind it refers to,
     /// unwrapping `Optional`, implicitly-unwrapped optionals and `Array` (both sugar and generic forms).
     func typedKind(for type: TypeSyntax?) -> ExploreKind? {
-        guard let type else {
+        guard let leaf = unwrappedType(type) else {
             return nil
         }
 
-        if let optional = type.as(OptionalTypeSyntax.self) {
-            return typedKind(for: optional.wrappedType)
-        }
-
-        if let optional = type.as(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
-            return typedKind(for: optional.wrappedType)
-        }
-
-        if let array = type.as(ArrayTypeSyntax.self) {
-            return typedKind(for: array.element)
-        }
-
-        guard let identifier = type.as(IdentifierTypeSyntax.self) else {
-            return memberTypedKind(for: type)
+        guard let identifier = leaf.as(IdentifierTypeSyntax.self) else {
+            return memberTypedKind(for: leaf)
         }
 
         let name = identifier.name.text
 
         if name == "Array" || name == "Optional" {
-            if let argument = identifier.genericArgumentClause?.arguments.first?.argument.as(TypeSyntax.self) {
-                return typedKind(for: argument)
-            }
             return nil
         }
 
         return kind(forTypeName: name)
+    }
+
+    /// Strips `Optional` / implicitly-unwrapped-optional / `Array` / `any` / `some` sugar (and the
+    /// `Array<>` / `Optional<>` generic forms) down to the innermost type. Shared by `typedKind`
+    /// and `namedType`. A bare `Array` / `Optional` with no generic argument is returned unchanged
+    /// (it denotes neither a resource nor a user type).
+    func unwrappedType(_ type: TypeSyntax?) -> TypeSyntax? {
+        guard let type else {
+            return nil
+        }
+
+        if let optional = type.as(OptionalTypeSyntax.self) {
+            return unwrappedType(optional.wrappedType)
+        }
+
+        if let optional = type.as(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
+            return unwrappedType(optional.wrappedType)
+        }
+
+        if let array = type.as(ArrayTypeSyntax.self) {
+            return unwrappedType(array.element)
+        }
+
+        if let someOrAny = type.as(SomeOrAnyTypeSyntax.self) {
+            return unwrappedType(someOrAny.constraint)
+        }
+
+        if
+            let identifier = type.as(IdentifierTypeSyntax.self),
+            identifier.name.text == "Array" || identifier.name.text == "Optional",
+            let argument = identifier.genericArgumentClause?.arguments.first?.argument.as(TypeSyntax.self) {
+            return unwrappedType(argument)
+        }
+
+        return type
     }
 
     /// Resolves a module-qualified type annotation like `SwiftUI.Image` or `UIKit.UIColor`.
