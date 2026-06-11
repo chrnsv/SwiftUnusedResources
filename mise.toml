@@ -60,7 +60,7 @@ echo "Artifact bundle created: $BUNDLE_ZIP"
 '''
 
 [tasks.update-version]
-description = "Update version in podspec and Package.swift"
+description = "Update version in podspec, Package.swift and SUR.swift"
 run = '''
 #!/usr/bin/env bash
 set -e
@@ -76,7 +76,10 @@ sed -i '' -E "s/(spec.version[[:space:]]*=[[:space:]]*')[^']+'/\1$VERSION'/" Swi
 # 2. Update Package.swift version in URL
 sed -i '' -E "s|(releases/download/)[^/]+/(sur-).+(\.artifactbundle\.zip)|\1$VERSION/\2$VERSION\3|" Package.swift
 
-# 3. Update checksum (if zip exists)
+# 3. Update version constant in SUR.swift
+sed -i '' -E "s/(static let version = \")[^\"]+(\")/\1$VERSION\2/" Sources/SUR/SUR.swift
+
+# 4. Update checksum (if zip exists)
 BUNDLE_ZIP="sur-$VERSION.artifactbundle.zip"
 if [ -f "$BUNDLE_ZIP" ]; then
     echo "Found $BUNDLE_ZIP, updating checksum..."

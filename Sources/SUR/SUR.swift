@@ -12,18 +12,28 @@ import Rainbow
 import SURCore
 
 struct SUR: AsyncParsableCommand {
+    static let version = "0.3.0"
+
     static let configuration = CommandConfiguration(
         commandName: "sur",
         abstract: "Find unused resources"
     )
-    
+
     @Option(name: .shortAndLong, help: "Root path of your Xcode project. Default is current.", transform: { Path($0) })
     var project: Path?
-    
+
     @Option(name: .shortAndLong, help: "Project's target. Skip to process all targets.")
     var target: String?
-    
+
+    @Flag(name: [.customShort("v"), .long], help: "Show the version.")
+    var version = false
+
     func run() async throws {
+        if version {
+            print(Self.version)
+            return
+        }
+
         let showWarnings = ProcessInfo.processInfo.environment["XCODE_PRODUCT_BUILD_VERSION"] != nil
 
         let projectPath: Path
