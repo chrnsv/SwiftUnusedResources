@@ -1,5 +1,5 @@
 [tasks.build]
-description = "Build universal binary"
+description = "Build release binary"
 run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64"
 
 [tasks.artifactbundle]
@@ -92,7 +92,7 @@ echo "Successfully updated version to $VERSION"
 '''
 
 [tasks.publish]
-description = "Publish release to GitHub"
+description = "Publish release to GitHub (draft → inspect → finalize)"
 run = '''
 #!/usr/bin/env bash
 set -e
@@ -110,11 +110,65 @@ if [ ! -f "$BUNDLE_ZIP" ]; then
 fi
 
 if ! command -v gh &> /dev/null; then
-    echo "Error: GitHub CLI (gh) is not installed."
+    echo "Error: GitHub CLI (gh) is not installed. Install with: brew install gh"
     exit 1
 fi
 
-COMMIT=$(git rev-parse HEAD)
-echo "Publishing release $VERSION (target: $COMMIT) to GitHub..."
-gh release create "$VERSION" "$BUNDLE_ZIP" --target "$COMMIT" --title "$VERSION" --generate-notes
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is not installed. Install with: brew install jq"
+    exit 1
+fi
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Publish the release to the upstream canonical repo (mugabe). Releases are
+# anchored to an explicit commit SHA, so target_commitish always resolves to a
+# commit that exists in upstream — avoiding "HTTP 422: Invalid target_commitish".
+REMOTE="upstream"
+REPO=$(git remote get-url "$REMOTE" | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')
+
+# The commit must exist in upstream before it can be referenced as a SHA.
+echo "Pushing $BRANCH to $REPO..."
+git push "$REMOTE" "$BRANCH"
+
+# Step 1: Create a draft release and upload the artifact. The target is
+# provisional here; for a draft no tag is created yet — it is set for real at
+# finalize time (Step 4), after Package.swift is updated and pushed.
+echo "Creating draft release $VERSION in $REPO..."
+gh release create "$VERSION" "$BUNDLE_ZIP" --repo "$REPO" --target "$(git rev-parse HEAD)" --title "$VERSION" --generate-notes --draft
+
+# Step 2: Extract asset URL and update Package.swift
+echo ""
+ASSET_URL=$(gh release view "$VERSION" --repo "$REPO" --json assets \
+  | jq -r --arg name "$BUNDLE_ZIP" '.assets[] | select(.name == $name) | .url')
+
+if [ -z "$ASSET_URL" ]; then
+    echo "Error: Could not retrieve asset URL for $BUNDLE_ZIP from the draft release."
+    exit 1
+fi
+
+echo "Asset URL: $ASSET_URL"
+
+CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
+echo "Checksum:  $CHECKSUM"
+
+# Only rewrite the binaryTarget URL (a GitHub *releases* URL), never the
+# dependency .package(url:) entries (which point at .git repos).
+sed -i '' -E "s|url: \"https://[^\"]*releases[^\"]*\"|url: \"$ASSET_URL\"|" Package.swift
+sed -i '' -E "s/(checksum: \")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
+echo "Package.swift updated."
+
+# Step 3: Commit and push Package.swift to upstream
+git add Package.swift
+git commit -m "chore: update binaryTarget URL and checksum for $VERSION"
+git push "$REMOTE" "$BRANCH"
+
+# Step 4: Finalize the release, tagging the commit that contains the updated
+# Package.swift. Publishing the draft creates the tag at this SHA in upstream.
+RELEASE_SHA=$(git rev-parse HEAD)
+echo ""
+echo "Finalizing release $VERSION at $RELEASE_SHA..."
+gh release edit "$VERSION" --repo "$REPO" --target "$RELEASE_SHA" --draft=false
+
+echo "Release $VERSION published successfully."
 '''
