@@ -34,7 +34,6 @@ struct SUR: AsyncParsableCommand {
             return
         }
 
-
         let showWarnings = ProcessInfo.processInfo.environment["XCODE_PRODUCT_BUILD_VERSION"] != nil
 
         let projectPath: Path
