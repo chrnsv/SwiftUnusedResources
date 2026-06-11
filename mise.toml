@@ -118,17 +118,21 @@ fi
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-# Resolve the fork (origin) repo explicitly. With an upstream remote present,
-# gh otherwise targets the parent repo, where this branch does not exist and
-# the release fails with "HTTP 422: Invalid target_commitish parameter".
-REPO=$(git remote get-url origin | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')
+# Publish the release to the upstream canonical repo (mugabe). Releases are
+# anchored to an explicit commit SHA, so target_commitish always resolves to a
+# commit that exists in upstream — avoiding "HTTP 422: Invalid target_commitish".
+REMOTE="upstream"
+REPO=$(git remote get-url "$REMOTE" | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')
 
-# Ensure the target branch exists on origin before creating the release.
-git push -u origin "$BRANCH"
+# The commit must exist in upstream before it can be referenced as a SHA.
+echo "Pushing $BRANCH to $REPO..."
+git push "$REMOTE" "$BRANCH"
 
-# Step 1: Create a draft release and upload the artifact
-echo "Creating draft release $VERSION in $REPO (target: $BRANCH)..."
-gh release create "$VERSION" "$BUNDLE_ZIP" --repo "$REPO" --target "$BRANCH" --title "$VERSION" --generate-notes --draft
+# Step 1: Create a draft release and upload the artifact. The target is
+# provisional here; for a draft no tag is created yet — it is set for real at
+# finalize time (Step 4), after Package.swift is updated and pushed.
+echo "Creating draft release $VERSION in $REPO..."
+gh release create "$VERSION" "$BUNDLE_ZIP" --repo "$REPO" --target "$(git rev-parse HEAD)" --title "$VERSION" --generate-notes --draft
 
 # Step 2: Extract asset URL and update Package.swift
 echo ""
@@ -145,19 +149,23 @@ echo "Asset URL: $ASSET_URL"
 CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
 echo "Checksum:  $CHECKSUM"
 
-sed -i '' -E "s|url: \"https://[^\"]+\"|url: \"$ASSET_URL\"|" Package.swift
+# Only rewrite the binaryTarget URL (a GitHub *releases* URL), never the
+# dependency .package(url:) entries (which point at .git repos).
+sed -i '' -E "s|url: \"https://[^\"]*releases[^\"]*\"|url: \"$ASSET_URL\"|" Package.swift
 sed -i '' -E "s/(checksum: \")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
 echo "Package.swift updated."
 
-# Step 3: Commit and push Package.swift
+# Step 3: Commit and push Package.swift to upstream
 git add Package.swift
 git commit -m "chore: update binaryTarget URL and checksum for $VERSION"
-git push
+git push "$REMOTE" "$BRANCH"
 
-# Step 4: Finalize the release
+# Step 4: Finalize the release, tagging the commit that contains the updated
+# Package.swift. Publishing the draft creates the tag at this SHA in upstream.
+RELEASE_SHA=$(git rev-parse HEAD)
 echo ""
-echo "Finalizing release $VERSION..."
-gh release edit "$VERSION" --repo "$REPO" --draft=false
+echo "Finalizing release $VERSION at $RELEASE_SHA..."
+gh release edit "$VERSION" --repo "$REPO" --target "$RELEASE_SHA" --draft=false
 
 echo "Release $VERSION published successfully."
 '''
