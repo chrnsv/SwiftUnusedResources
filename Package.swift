@@ -14,15 +14,15 @@ let package = Package(
         .library(name: "SURCore", targets: ["SURCore"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
-        .package(url: "https://github.com/kylef/PathKit.git", from: "1.0.1"),
-        .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.5"),
-        .package(url: "https://github.com/tuist/XcodeProj.git", from: "9.13.0"),
-        .package(url: "https://github.com/IBDecodable/IBDecodable.git", from: "0.6.1"),
-        .package(url: "https://github.com/onevcat/Rainbow.git", from: "4.2.1"),
-        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.0"),
-        .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins.git", from: "0.63.0"),
-        .package(url: "https://github.com/jpsim/Yams.git", from: "6.2.0")
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "603.0.0"),
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "1.0.1"),
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "1.0.5"),
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "9.13.0"),
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "0.6.1"),
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "4.2.1"),
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "1.8.0"),
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "0.63.0"),
+        .package(url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip", from: "6.2.0")
     ],
     targets: [
         .executableTarget(
@@ -63,7 +63,7 @@ let package = Package(
         ),
         .binaryTarget(
             name: "SURBinary",
-            url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/0.3.1/sur-0.3.1.artifactbundle.zip",
+            url: "https://github.com/chrnsv/SwiftUnusedResources/releases/download/untagged-567c4aaf90d28950ccd1/sur-0.3.1.artifactbundle.zip",
             checksum: "67d32be6efaf859ed6fed31f3afddf7e19a8ab2b0e37ec71b6937d90e4becda7"
         ),
         .testTarget(
