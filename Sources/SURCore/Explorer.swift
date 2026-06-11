@@ -22,7 +22,7 @@ public final class Explorer {
     /// Per-target aggregation of user-type initializer signatures and the call sites that may
     /// pass resources into them. Resolved cross-file once every source has been parsed, just
     /// before `analyze()`. Reset at the start of each target.
-    private var typeRegistry: [String: [String: InitParameterType]] = [:]
+    private var typeRegistry: InitializerRegistry = [:]
     private var pendingInits: [PendingInitCall] = []
 
     public init(
@@ -353,10 +353,7 @@ public final class Explorer {
         for result in results {
             usages.append(contentsOf: result.usages)
             pendingInits.append(contentsOf: result.pendingInits)
-
-            for (type, parameters) in result.typeRegistry {
-                typeRegistry[type, default: [:]].merge(parameters) { _, new in new }
-            }
+            mergeInitializerRegistry(result.typeRegistry, into: &typeRegistry)
         }
 
         await storage.addUsages(usages)

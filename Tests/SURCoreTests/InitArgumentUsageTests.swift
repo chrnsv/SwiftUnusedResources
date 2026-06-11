@@ -155,6 +155,93 @@ struct InitArgumentUsageTests {
         #expect(images(source) == ["star"])
     }
 
+    // MARK: - Static factory methods
+
+    @Test("Resolves a resource passed to an inferred static factory")
+    func staticFactoryArgument() {
+        let source = """
+        struct Test { let image: ImageResource; let text: String }
+        extension Test {
+            static func image(_ image: ImageResource) -> Self { .init(image: image, text: "Default") }
+        }
+        struct Foo { let test: Test }
+        let foo = Foo(test: .image(.frog))
+        """
+        #expect(images(source) == ["frog"])
+    }
+
+    @Test("Resolves a literal inside a Self-returning factory body")
+    func factoryBodyLiteral() {
+        let source = """
+        struct Test { let image: ImageResource; let text: String }
+        extension Test {
+            static func text(_ text: String) -> Self { .init(image: .dog, text: text) }
+        }
+        """
+        #expect(images(source) == ["dog"])
+    }
+
+    @Test("Resolves the full static-factory example to dog and frog")
+    func staticFactoryFullExample() {
+        let source = """
+        struct Test {
+            let image: ImageResource
+            let text: String
+        }
+
+        extension Test {
+            static func image(_ image: ImageResource) -> Self {
+                .init(image: image, text: "Default")
+            }
+
+            static func text(_ text: String) -> Self {
+                .init(image: .dog, text: text)
+            }
+        }
+
+        struct Foo {
+            let test: Test
+        }
+
+        let foo = Foo(test: .image(.frog))
+        let bar = Foo(test: .text("bar"))
+        """
+        #expect(Set(images(source)) == ["dog", "frog"])
+    }
+
+    @Test("Resolves factories from a constrained protocol extension via an existential")
+    func protocolExtensionFactories() {
+        let source = """
+        protocol TestProtocol {
+            var image: ImageResource { get }
+            var text: String { get }
+        }
+
+        struct Test: TestProtocol {
+            let image: ImageResource
+            let text: String
+        }
+
+        extension TestProtocol where Self == Test {
+            static func image(_ image: ImageResource) -> Self {
+                .init(image: image, text: "Default")
+            }
+
+            static func text(_ text: String) -> Self {
+                .init(image: .dog, text: text)
+            }
+        }
+
+        struct Foo {
+            let test: any TestProtocol
+        }
+
+        let foo = Foo(test: .image(.frog))
+        let bar = Foo(test: .text("bar"))
+        """
+        #expect(Set(images(source)) == ["dog", "frog"])
+    }
+
     // MARK: - Exclusions
 
     @Test("A computed property is not treated as a memberwise label")

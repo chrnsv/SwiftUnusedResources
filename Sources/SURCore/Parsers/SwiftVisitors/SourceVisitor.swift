@@ -12,14 +12,18 @@ final class SourceVisitor: SyntaxVisitor {
 
     private(set) var usages: [ExploreUsage] = []
 
-    /// User-type initializer signatures declared in this file: `typeName → (label → parameter type)`.
+    /// User-type constructor signatures declared in this file: `typeName → selector → (label → type)`.
     /// Aggregated across files and used to resolve `pendingInits`. Mutated from the
     /// `SourceVisitor+InitArguments` extension, so it carries an internal (not private) setter.
-    var typeRegistry: [String: [String: InitParameterType]] = [:]
+    var typeRegistry: InitializerRegistry = [:]
 
-    /// Explicit-type initializer call sites whose arguments may carry resources, resolved against
+    /// Explicit-type constructor call sites whose arguments may carry resources, resolved against
     /// `typeRegistry` once every file has contributed.
     var pendingInits: [PendingInitCall] = []
+
+    /// Stack of enclosing type names (struct/class/actor/extension), used to resolve `Self` in a
+    /// return clause back to the concrete type so `static func make() -> Self { .init(...) }` resolves.
+    var enclosingTypeNames: [String] = []
 
     /// Lexical scope stack of resource-typed variables, used to attribute assignments
     /// (`local = .asset`) to the right kind. The root scope holds file/type-level names;
@@ -115,7 +119,7 @@ final class SourceVisitor: SyntaxVisitor {
                     collectReturnedAssets(in: statements, with: kind)
                 }
             }
-            else if let typeName = namedType(for: type) {
+            else if let typeName = resolvedNamedType(for: type) {
                 if let value = binding.initializer?.value {
                     collectNamedTypeValue(value, expectedType: typeName)
                 }
@@ -139,7 +143,7 @@ final class SourceVisitor: SyntaxVisitor {
         if let kind = typedKind(for: returnType), let body = node.body {
             collectReturnedAssets(in: body.statements, with: kind)
         }
-        else if let typeName = namedType(for: returnType), let body = node.body {
+        else if let typeName = resolvedNamedType(for: returnType), let body = node.body {
             collectNamedTypeReturns(in: body.statements, expectedType: typeName)
         }
 
@@ -158,7 +162,7 @@ final class SourceVisitor: SyntaxVisitor {
         if let kind = typedKind(for: returnType) {
             collectReturnedAssets(in: node.statements, with: kind)
         }
-        else if let typeName = namedType(for: returnType) {
+        else if let typeName = resolvedNamedType(for: returnType) {
             collectNamedTypeReturns(in: node.statements, expectedType: typeName)
         }
 
@@ -214,7 +218,7 @@ final class SourceVisitor: SyntaxVisitor {
             if let kind = typedKind(for: node.returnClause.type) {
                 collectReturnedAssets(in: statements, with: kind)
             }
-            else if let typeName = namedType(for: node.returnClause.type) {
+            else if let typeName = resolvedNamedType(for: node.returnClause.type) {
                 collectNamedTypeReturns(in: statements, expectedType: typeName)
             }
         }
@@ -237,22 +241,26 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+        enclosingTypeNames.append(node.name.text)
         registerType(named: node.name.text, members: node.memberBlock.members, memberwiseFallback: false)
         return .visitChildren
     }
 
     override func visitPost(_ node: ClassDeclSyntax) {
         popScope()
+        enclosingTypeNames.removeLast()
     }
 
     override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+        enclosingTypeNames.append(node.name.text)
         registerType(named: node.name.text, members: node.memberBlock.members, memberwiseFallback: true)
         return .visitChildren
     }
 
     override func visitPost(_ node: StructDeclSyntax) {
         popScope()
+        enclosingTypeNames.removeLast()
     }
 
     override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
@@ -266,21 +274,45 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+        enclosingTypeNames.append(node.name.text)
         registerType(named: node.name.text, members: node.memberBlock.members, memberwiseFallback: false)
         return .visitChildren
     }
 
     override func visitPost(_ node: ActorDeclSyntax) {
         popScope()
+        enclosingTypeNames.removeLast()
     }
 
     override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+
+        // Register factories under the extended type (so a call on `any P` resolves), but resolve
+        // `Self` in their bodies to the constrained type from `where Self == X` when present.
+        let extendedType = namedType(for: node.extendedType)
+        enclosingTypeNames.append(extensionSelfType(of: node, default: extendedType) ?? "")
+
+        if let extendedType {
+            registerType(named: extendedType, members: node.memberBlock.members, memberwiseFallback: false)
+        }
+
         return .visitChildren
     }
 
     override func visitPost(_ node: ExtensionDeclSyntax) {
         popScope()
+        enclosingTypeNames.removeLast()
+    }
+
+    override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        enclosingTypeNames.append(node.name.text)
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: ProtocolDeclSyntax) {
+        popScope()
+        enclosingTypeNames.removeLast()
     }
 }
 
@@ -451,7 +483,7 @@ extension SourceVisitor {
             if let kind = typedKind(for: parameter.type) {
                 collectValue(value, with: kind)
             }
-            else if let typeName = namedType(for: parameter.type) {
+            else if let typeName = resolvedNamedType(for: parameter.type) {
                 collectNamedTypeValue(value, expectedType: typeName)
             }
         }

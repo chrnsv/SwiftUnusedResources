@@ -3,7 +3,7 @@
 /// type-inferred nested `.init(...)` — into a `.generated` usage. Pure and cross-file: it
 /// only needs the merged registry, so it is shared by `Explorer` and exercised directly in tests.
 struct InitArgumentResolver {
-    let typeRegistry: [String: [String: InitParameterType]]
+    let typeRegistry: InitializerRegistry
     let kinds: Set<ExploreKind>
 
     func resolve(_ pendingInits: [PendingInitCall]) -> [ExploreUsage] {
@@ -17,7 +17,10 @@ struct InitArgumentResolver {
     }
 
     private func resolve(_ call: PendingInitCall, expectedType: String?, into usages: inout [ExploreUsage]) {
-        guard let typeName = call.typeName ?? expectedType, let parameters = typeRegistry[typeName] else {
+        guard
+            let typeName = call.typeName ?? expectedType,
+            let parameters = typeRegistry[typeName]?[call.selector]
+        else {
             return
         }
 

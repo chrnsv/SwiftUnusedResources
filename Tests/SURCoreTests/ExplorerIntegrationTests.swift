@@ -195,6 +195,87 @@ struct ExplorerIntegrationTests {
         #expect(unused == ["unusedColor"])
     }
 
+    @Test("Counts images via static factories and factory bodies across files")
+    func crossFileStaticFactoryUsage() async throws {
+        let fixture = try FixtureProject()
+        defer { fixture.remove() }
+
+        try fixture.addAssetCatalog("Assets.xcassets", imageSets: ["dog", "frog", "lonely"])
+        try fixture.addSource("Test.swift", """
+        struct Test {
+            let image: ImageResource
+            let text: String
+        }
+
+        extension Test {
+            static func image(_ image: ImageResource) -> Self {
+                .init(image: image, text: "Default")
+            }
+
+            static func text(_ text: String) -> Self {
+                .init(image: .dog, text: text)
+            }
+        }
+
+        struct Foo {
+            let test: Test
+        }
+        """)
+        try fixture.addSource("Use.swift", """
+        let foo = Foo(test: .image(.frog))
+        let bar = Foo(test: .text("bar"))
+        """)
+        try fixture.write(targets: [
+            .init(name: "App", sources: ["Test.swift", "Use.swift"], resources: ["Assets.xcassets"]),
+        ])
+
+        let unused = try await unusedNames(in: fixture, target: "App")
+        #expect(unused == ["lonely"])
+    }
+
+    @Test("Counts images via a constrained protocol extension across files")
+    func crossFileProtocolFactoryUsage() async throws {
+        let fixture = try FixtureProject()
+        defer { fixture.remove() }
+
+        try fixture.addAssetCatalog("Assets.xcassets", imageSets: ["dog", "frog", "lonely"])
+        try fixture.addSource("Test.swift", """
+        protocol TestProtocol {
+            var image: ImageResource { get }
+            var text: String { get }
+        }
+
+        struct Test: TestProtocol {
+            let image: ImageResource
+            let text: String
+        }
+
+        extension TestProtocol where Self == Test {
+            static func image(_ image: ImageResource) -> Self {
+                .init(image: image, text: "Default")
+            }
+
+            static func text(_ text: String) -> Self {
+                .init(image: .dog, text: text)
+            }
+        }
+
+        struct Foo {
+            let test: any TestProtocol
+        }
+        """)
+        try fixture.addSource("Use.swift", """
+        let foo = Foo(test: .image(.frog))
+        let bar = Foo(test: .text("bar"))
+        """)
+        try fixture.write(targets: [
+            .init(name: "App", sources: ["Test.swift", "Use.swift"], resources: ["Assets.xcassets"]),
+        ])
+
+        let unused = try await unusedNames(in: fixture, target: "App")
+        #expect(unused == ["lonely"])
+    }
+
     @Test("Does not count a bare member passed to a String parameter")
     func stringParameterDoesNotCount() async throws {
         let fixture = try FixtureProject()

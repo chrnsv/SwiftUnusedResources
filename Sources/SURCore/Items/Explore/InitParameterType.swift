@@ -12,12 +12,30 @@ enum InitParameterType: Sendable, Equatable {
     case named(String)
 }
 
-/// A collected initializer call site, recorded during parsing and resolved against the
-/// cross-file type registry afterwards. `typeName` is the explicit callee type
-/// (`Foo(...)`, `Foo.init(...)`, `Outer.Inner(...)`), or `nil` for an inferred `.init(...)`
-/// whose type comes from the enclosing parameter at resolution time.
+/// The set of constructors a type exposes to asset detection, keyed by type name. Each type maps
+/// a *selector* — `"init"` for an initializer/memberwise init, or a static factory method's name —
+/// to that constructor's `label → parameter type` map. Built per file and merged across files.
+typealias InitializerRegistry = [String: [String: [String: InitParameterType]]]
+
+/// Deep-merges one initializer registry into another (`type → selector → label`), the later
+/// value winning on a conflict — used to combine per-file registries and a type's own
+/// declaration with its extensions.
+func mergeInitializerRegistry(_ source: InitializerRegistry, into target: inout InitializerRegistry) {
+    for (type, selectors) in source {
+        for (selector, parameters) in selectors {
+            target[type, default: [:]][selector, default: [:]].merge(parameters) { _, new in new }
+        }
+    }
+}
+
+/// A collected constructor call site, recorded during parsing and resolved against the cross-file
+/// type registry afterwards. `typeName` is the explicit callee type (`Foo(...)`, `Foo.init(...)`,
+/// `Outer.Inner(...)`, `Test.image(...)`), or `nil` for an inferred leading-dot call (`.init(...)`,
+/// `.image(...)`) whose type comes from the enclosing parameter at resolution time. `selector`
+/// is `"init"` for an initializer or the static factory method's name.
 struct PendingInitCall: Sendable, Equatable {
     var typeName: String?
+    var selector: String
     var arguments: [PendingInitArgument]
 }
 
@@ -34,6 +52,6 @@ struct PendingInitArgument: Sendable, Equatable {
 /// initializer signatures it declares, and the pending init call sites awaiting resolution.
 struct SwiftParseResult: Sendable {
     var usages: [ExploreUsage]
-    var typeRegistry: [String: [String: InitParameterType]]
+    var typeRegistry: InitializerRegistry
     var pendingInits: [PendingInitCall]
 }
