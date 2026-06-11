@@ -23,14 +23,29 @@ struct SwiftParser: Sendable {
     func parse(
         _ path: URL
     ) throws -> [ExploreUsage] {
-        let file = try String(contentsOf: path)
-        return parse(source: file, at: path)
+        try parseDetailed(path).usages
     }
 
     func parse(
         source: String,
         at path: URL = URL(fileURLWithPath: "<source>")
     ) -> [ExploreUsage] {
+        parseDetailed(source: source, at: path).usages
+    }
+
+    /// Parses a file, returning not just the proven usages but also the initializer signatures
+    /// it declares and the initializer call sites awaiting cross-file resolution.
+    func parseDetailed(
+        _ path: URL
+    ) throws -> SwiftParseResult {
+        let file = try String(contentsOf: path)
+        return parseDetailed(source: file, at: path)
+    }
+
+    func parseDetailed(
+        source: String,
+        at path: URL = URL(fileURLWithPath: "<source>")
+    ) -> SwiftParseResult {
         let tree = Parser.parse(source: source)
         let visitor = SourceVisitor(
             showWarnings: showWarnings,
@@ -41,6 +56,10 @@ struct SwiftParser: Sendable {
             tree
         )
 
-        return visitor.usages
+        return SwiftParseResult(
+            usages: visitor.usages,
+            typeRegistry: visitor.typeRegistry,
+            pendingInits: visitor.pendingInits
+        )
     }
 }

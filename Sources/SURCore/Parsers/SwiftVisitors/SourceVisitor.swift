@@ -12,6 +12,15 @@ final class SourceVisitor: SyntaxVisitor {
 
     private(set) var usages: [ExploreUsage] = []
 
+    /// User-type initializer signatures declared in this file: `typeName → (label → parameter type)`.
+    /// Aggregated across files and used to resolve `pendingInits`. Mutated from the
+    /// `SourceVisitor+InitArguments` extension, so it carries an internal (not private) setter.
+    var typeRegistry: [String: [String: InitParameterType]] = [:]
+
+    /// Explicit-type initializer call sites whose arguments may carry resources, resolved against
+    /// `typeRegistry` once every file has contributed.
+    var pendingInits: [PendingInitCall] = []
+
     /// Lexical scope stack of resource-typed variables, used to attribute assignments
     /// (`local = .asset`) to the right kind. The root scope holds file/type-level names;
     /// a new scope is pushed per function-like / type body so a local in one scope does
@@ -60,6 +69,7 @@ final class SourceVisitor: SyntaxVisitor {
         usages.append(contentsOf: newUsages)
 
         collectMemberCallArguments(of: node)
+        collectPendingInit(of: node)
 
         return super.visit(node)
     }
@@ -90,20 +100,29 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
         for binding in node.bindings {
-            guard let kind = typedKind(for: binding.typeAnnotation?.type) else {
-                continue
-            }
+            let type = binding.typeAnnotation?.type
 
-            if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
-                declareTypedVariable(name, kind)
-            }
+            if let kind = typedKind(for: type) {
+                if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
+                    declareTypedVariable(name, kind)
+                }
 
-            if let value = binding.initializer?.value {
-                collectValue(value, with: kind)
-            }
+                if let value = binding.initializer?.value {
+                    collectValue(value, with: kind)
+                }
 
-            if let statements = getterStatements(of: binding.accessorBlock) {
-                collectReturnedAssets(in: statements, with: kind)
+                if let statements = getterStatements(of: binding.accessorBlock) {
+                    collectReturnedAssets(in: statements, with: kind)
+                }
+            }
+            else if let typeName = namedType(for: type) {
+                if let value = binding.initializer?.value {
+                    collectNamedTypeValue(value, expectedType: typeName)
+                }
+
+                if let statements = getterStatements(of: binding.accessorBlock) {
+                    collectNamedTypeReturns(in: statements, expectedType: typeName)
+                }
             }
         }
 
@@ -115,8 +134,13 @@ final class SourceVisitor: SyntaxVisitor {
 
         collectParameterDefaults(node.signature.parameterClause.parameters)
 
-        if let kind = typedKind(for: node.signature.returnClause?.type), let body = node.body {
+        let returnType = node.signature.returnClause?.type
+
+        if let kind = typedKind(for: returnType), let body = node.body {
             collectReturnedAssets(in: body.statements, with: kind)
+        }
+        else if let typeName = namedType(for: returnType), let body = node.body {
+            collectNamedTypeReturns(in: body.statements, expectedType: typeName)
         }
 
         return .visitChildren
@@ -129,8 +153,13 @@ final class SourceVisitor: SyntaxVisitor {
     override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
 
-        if let kind = typedKind(for: node.signature?.returnClause?.type) {
+        let returnType = node.signature?.returnClause?.type
+
+        if let kind = typedKind(for: returnType) {
             collectReturnedAssets(in: node.statements, with: kind)
+        }
+        else if let typeName = namedType(for: returnType) {
+            collectNamedTypeReturns(in: node.statements, expectedType: typeName)
         }
 
         return .visitChildren
@@ -181,10 +210,13 @@ final class SourceVisitor: SyntaxVisitor {
 
         collectParameterDefaults(node.parameterClause.parameters)
 
-        if
-            let kind = typedKind(for: node.returnClause.type),
-            let statements = getterStatements(of: node.accessorBlock) {
-            collectReturnedAssets(in: statements, with: kind)
+        if let statements = getterStatements(of: node.accessorBlock) {
+            if let kind = typedKind(for: node.returnClause.type) {
+                collectReturnedAssets(in: statements, with: kind)
+            }
+            else if let typeName = namedType(for: node.returnClause.type) {
+                collectNamedTypeReturns(in: statements, expectedType: typeName)
+            }
         }
 
         return .visitChildren
@@ -205,6 +237,7 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+        registerType(named: node.name.text, members: node.memberBlock.members, memberwiseFallback: false)
         return .visitChildren
     }
 
@@ -214,6 +247,7 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+        registerType(named: node.name.text, members: node.memberBlock.members, memberwiseFallback: true)
         return .visitChildren
     }
 
@@ -232,6 +266,7 @@ final class SourceVisitor: SyntaxVisitor {
 
     override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+        registerType(named: node.name.text, members: node.memberBlock.members, memberwiseFallback: false)
         return .visitChildren
     }
 
@@ -409,8 +444,15 @@ extension SourceVisitor {
     /// e.g. `func makeBadge(icon: UIImage = .star)`.
     private func collectParameterDefaults(_ parameters: FunctionParameterListSyntax) {
         for parameter in parameters {
-            if let kind = typedKind(for: parameter.type), let value = parameter.defaultValue?.value {
+            guard let value = parameter.defaultValue?.value else {
+                continue
+            }
+
+            if let kind = typedKind(for: parameter.type) {
                 collectValue(value, with: kind)
+            }
+            else if let typeName = namedType(for: parameter.type) {
+                collectNamedTypeValue(value, expectedType: typeName)
             }
         }
     }
