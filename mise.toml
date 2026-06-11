@@ -118,13 +118,21 @@ fi
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
+# Resolve the fork (origin) repo explicitly. With an upstream remote present,
+# gh otherwise targets the parent repo, where this branch does not exist and
+# the release fails with "HTTP 422: Invalid target_commitish parameter".
+REPO=$(git remote get-url origin | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')
+
+# Ensure the target branch exists on origin before creating the release.
+git push -u origin "$BRANCH"
+
 # Step 1: Create a draft release and upload the artifact
-echo "Creating draft release $VERSION (target: $BRANCH)..."
-gh release create "$VERSION" "$BUNDLE_ZIP" --target "$BRANCH" --title "$VERSION" --generate-notes --draft
+echo "Creating draft release $VERSION in $REPO (target: $BRANCH)..."
+gh release create "$VERSION" "$BUNDLE_ZIP" --repo "$REPO" --target "$BRANCH" --title "$VERSION" --generate-notes --draft
 
 # Step 2: Extract asset URL and update Package.swift
 echo ""
-ASSET_URL=$(gh release view "$VERSION" --json assets \
+ASSET_URL=$(gh release view "$VERSION" --repo "$REPO" --json assets \
   | jq -r --arg name "$BUNDLE_ZIP" '.assets[] | select(.name == $name) | .url')
 
 if [ -z "$ASSET_URL" ]; then
@@ -149,7 +157,7 @@ git push
 # Step 4: Finalize the release
 echo ""
 echo "Finalizing release $VERSION..."
-gh release edit "$VERSION" --draft=false
+gh release edit "$VERSION" --repo "$REPO" --draft=false
 
 echo "Release $VERSION published successfully."
 '''
