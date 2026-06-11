@@ -18,7 +18,13 @@ public final class Explorer {
     private let propertyKinds: [String: ExploreKind]
 
     let storage = Storage()
-    
+
+    /// Per-target aggregation of user-type initializer signatures and the call sites that may
+    /// pass resources into them. Resolved cross-file once every source has been parsed, just
+    /// before `analyze()`. Reset at the start of each target.
+    private var typeRegistry: InitializerRegistry = [:]
+    private var pendingInits: [PendingInitCall] = []
+
     public init(
         projectPath: Path,
         sourceRoot: Path,
@@ -151,7 +157,9 @@ public final class Explorer {
     
     private func explore(target: PBXNativeTarget) async throws {
         await storage.clean()
-        
+        typeRegistry.removeAll()
+        pendingInits.removeAll()
+
         guard let resources = try target.resourcesBuildPhase() else {
             // no sources, skip
             print("    No resources, skip")
@@ -166,7 +174,9 @@ public final class Explorer {
         if let synchronizedGroups = target.fileSystemSynchronizedGroups {
             try await explore(groups: synchronizedGroups)
         }
-        
+
+        await resolvePendingInits()
+
         try await analyze()
     }
     
@@ -318,26 +328,50 @@ public final class Explorer {
             propertyKinds: propertyKinds
         )
         
-        let usages = try await withThrowingTaskGroup(of: [ExploreUsage].self) { group in
+        let results = try await withThrowingTaskGroup(of: SwiftParseResult.self) { group in
             files.forEach { path in
                 if path.extension != "swift" {
                     return
                 }
-                
+
                 if excludedSources.contains(path) {
                     return
                 }
-                
+
                 let url = path.url
-                
+
                 group.addTask { @Sendable in
-                    try parser.parse(url)
+                    try parser.parseDetailed(url)
                 }
             }
-            
-            return try await group.reduce(into: [], +=)
+
+            return try await group.reduce(into: [SwiftParseResult]()) { $0.append($1) }
         }
-        
+
+        var usages: [ExploreUsage] = []
+
+        // Sort by path so the registry merge (later-wins on conflicting same-named types) is
+        // deterministic, rather than depending on nondeterministic task-group completion order.
+        for result in results.sorted(by: { $0.path < $1.path }) {
+            usages.append(contentsOf: result.usages)
+            pendingInits.append(contentsOf: result.pendingInits)
+            mergeInitializerRegistry(result.typeRegistry, into: &typeRegistry)
+        }
+
+        await storage.addUsages(usages)
+    }
+
+    /// Resolves every collected initializer call site against the aggregated type registry,
+    /// recording a `.generated` usage for each resource argument — including resources nested in
+    /// type-inferred `.init(...)` calls. Runs after all sources are parsed, before `analyze()`.
+    private func resolvePendingInits() async {
+        let resolver = InitArgumentResolver(typeRegistry: typeRegistry, kinds: kinds)
+        let usages = resolver.resolve(pendingInits)
+
+        guard !usages.isEmpty else {
+            return
+        }
+
         await storage.addUsages(usages)
     }
 }

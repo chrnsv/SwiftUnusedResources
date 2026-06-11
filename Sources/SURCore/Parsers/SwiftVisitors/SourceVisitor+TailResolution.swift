@@ -97,6 +97,32 @@ extension SourceVisitor {
         return leaves
     }
 
+    /// Expands a value expression into the leaf expressions an argument/value position evaluates to,
+    /// flattening `resolveTail` branches, array literals, and the unfolded-ternary flat sequence
+    /// (`flag ? .a : .b`). Calls and member accesses are returned as leaves for the caller to inspect.
+    func shallowLeaves(of expression: ExprSyntax) -> [ExprSyntax] {
+        var leaves: [ExprSyntax] = []
+
+        for leaf in resolveTail(expression) {
+            if let array = leaf.as(ArrayExprSyntax.self) {
+                array.elements.forEach { leaves += shallowLeaves(of: $0.expression) }
+            }
+            else if let sequence = leaf.as(SequenceExprSyntax.self) {
+                // The parser does not fold operators, so a ternary argument arrives as a flat
+                // sequence whose `then` branch hides inside an UnresolvedTernaryExprSyntax element.
+                for element in sequence.elements {
+                    let unwrapped = element.as(UnresolvedTernaryExprSyntax.self)?.thenExpression ?? element
+                    leaves += shallowLeaves(of: unwrapped)
+                }
+            }
+            else {
+                leaves.append(leaf)
+            }
+        }
+
+        return leaves
+    }
+
     /// `.brand` → "brand"; `.brand.opacity(0.5)` → "brand"; `VStack(...)` / `Color(.x)` /
     /// literals → nil (a call only counts when its callee chain is rooted in a bare member).
     func innermostBareMember(of expression: ExprSyntax) -> String? {
