@@ -141,3 +141,23 @@ symbols:
 
 Only unlabeled arguments and arguments labeled `color:` of listed calls are collected, so
 control labels (`for:`, `alignment:`, …) are never mistaken for assets.
+
+## Benchmarks
+
+`SURBenchmarks` measures each phase of the pipeline in-process. Always build it in release.
+
+```bash
+# synthetic fixture (small | medium | large)
+swift run -c release SURBenchmarks --size medium --json .benchmarks/baseline.json
+
+# after a change
+swift run -c release SURBenchmarks --size medium --compare .benchmarks/baseline.json
+
+# a real project
+swift run -c release SURBenchmarks --project /path/to/App.xcodeproj --target App
+```
+
+Benchmarks: `xcodeproj.load`, `fs.discovery`, `swift.parse.serial`, `swift.parse.parallel`,
+`xib.parse`, `analyze`, `e2e`. Each one stops early after `--max-seconds` (default 60) but always
+takes at least one sample. Isolated phases ignore `sur.yml` exclusions; `e2e` honors them.
+Treat median deltas under ~5 % as noise. `Scripts/bench-e2e.sh` times the `sur` binary itself.
