@@ -139,26 +139,11 @@ public final class Explorer {
             guard let path = try group.fullPath(sourceRoot: sourceRoot) else {
                 continue
             }
-            
-            let extensions = ["png", "jpg", "pdf", "gif", "svg", "xcassets", "xib", "storyboard"]
-            
-            for ext in extensions {
-                for resourcePath in path.descendants(withExtension: ext) {
-                    if ext != "xcassets" && resourcePath.string.contains("xcassets") {
-                        continue
-                    }
 
-                    if resourcePath.containsDirectory(withExtension: "icon") {
-                        continue
-                    }
-                    
-                    try await explore(resource: resourcePath)
-                }
-            }
-            
-            let sources = path.descendants(withExtension: "swift")
-            
-            try await explore(files: sources)
+            let discovered = discoverFiles(inSynchronizedGroup: path)
+
+            try await explore(resources: discovered.resources)
+            try await explore(files: discovered.sources)
         }
     }
     
@@ -225,29 +210,7 @@ public final class Explorer {
     }
     
     private func explore(xcassets path: Path) async throws {
-        let resources = kinds
-            .flatMap { explore(xcassets: path, kind: $0) }
-        
-        await storage.addResources(resources)
-    }
-    
-    private func explore(xcassets path: Path, kind: ExploreKind) -> [ExploreResource] {
-        guard !excludedAssets.contains(path.lastComponentWithoutExtension) else {
-            return []
-        }
-        
-        let resources = path.descendants(withExtension: kind.assetExtension)
-            .filter { !$0.containsDirectory(withExtension: "icon") }
-            .map {
-                ExploreResource(
-                    name: $0.lastComponentWithoutExtension,
-                    type: .asset(assets: path.string),
-                    kind: kind,
-                    path: $0.absolute().string
-                )
-            }
-        
-        return resources
+        await storage.addResources(assetResources(in: path, kinds: kinds, excludedAssets: excludedAssets))
     }
     
     private func explore(image path: Path) async throws {
@@ -363,15 +326,6 @@ private extension Explorer {
 
         case .file:
             return "\(resource.path): warning: '\(resource.name)' never used"
-        }
-    }
-}
-
-private extension ExploreKind {
-    var assetExtension: String {
-        switch self {
-        case .image: "imageset"
-        case .color: "colorset"
         }
     }
 }
