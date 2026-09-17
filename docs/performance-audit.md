@@ -1,4 +1,4 @@
-# Performance audit — 2026-09-18, revision 481667f
+# Performance audit — 2026-09-18, measured at revision 481667f
 
 ## Summary
 
@@ -13,8 +13,9 @@ Two functions account for ~98 % of the run time of `sur` on every workload measu
 Matching is O(resources × usages) and compiles a regular expression or rebuilds a
 `SwiftIdentifier` for every pair; discovery walks the same directory tree nine times. Both
 are fixable without changing behavior, and both are already isolated as functions with tests
-and dedicated benchmarks. Expected effect of the first three fixes: **~5.3 s → ~0.5 s on the
-production app, ~26 s → < 1 s on the medium fixture, ~10.5 min → seconds on the large one.**
+and dedicated benchmarks. Estimated effect of the first three fixes (an estimate, to be
+confirmed with `--compare`): **~5.3 s → roughly 0.5 s on the production app, ~26 s → about a
+second on the medium fixture, ~10.5 min → seconds on the large one.**
 
 Swift parsing and our syntax visitors — where most of the code lives — are 2 % of the run and
 not worth optimizing now.
@@ -97,7 +98,9 @@ and output add ~0.3 s to the in-process figure.
 
 ## Where the time goes
 
-Share of the e2e median (parse = the parallel variant, which is what `sur` runs):
+Share of the e2e median (parse = the parallel variant, which is what `sur` runs). Shares can
+add up to slightly more than 100 %: the isolated phases ignore `sur.yml` exclusions and cover
+everything discovered, while `e2e` honors the exclusions.
 
 | phase | small | medium | large | production app |
 |---|---|---|---|---|
@@ -141,25 +144,30 @@ Sorted by expected gain ÷ risk.
   1. `ResourceKeys` per resource, computed once: `name`, `rswiftIdentifier = SwiftIdentifier(name:).description`, `generatedIdentifier = rswiftIdentifier.withoutImageAndColor()`. `withoutImageAndColor` uses one file-level compiled regex (as `SwiftIdentifier.swift` already does for its own two).
   2. Compile each distinct `.regexp` pattern once per call (`[String: NSRegularExpression]`), still throwing on an invalid pattern.
 - **Expected gain:** removes ~80 % of `analyze` while staying O(R×U): production app ≈ 3.5 s → ≈ 0.7 s; shows on `analyze` and `e2e`.
-- **Behavior risk:** none — same comparisons, same order; pinned by `UnusedResourcesTests` (every usage case, invalid pattern, order) and the fixture oracle. One nuance to keep: today an invalid pattern throws only if a resource of the same kind exists; compile lazily on first use to preserve that.
+- **Behavior risk:** low — same comparisons, same order; pinned by `UnusedResourcesTests` (every usage case, order) and the fixture oracle. One edge must be kept deliberately, see "Invalid patterns" under F2.
 - **Effort:** S
 
 ### F2. Matching is O(resources × usages)
 
 - **Where:** same function.
 - **Evidence:** ×106 time for ×10 input; 10.5 min on the large fixture.
-- **Proposed fix (on top of F1):** index usages once per kind: `Set<String>` of `.string` values, of `.rswift` identifiers, of `.generated` identifiers, and an array of distinct compiled regexes. A resource is used iff `strings.contains(name) || rswift.contains(rswiftIdentifier) || generated.contains(generatedIdentifier) || regexes.contains { matches }`. Cost becomes O(R + U + R × distinct patterns); patterns are few (usages with interpolation, de-duplicated). Try exact sets first, regexes last.
-- **Expected gain:** `analyze` drops to tens of milliseconds on the production app and to well under a second on large; e2e on medium ≈ 26.5 s → ≈ 1.4 s (then bounded by discovery, see F3).
-- **Behavior risk:** low — the result is a membership test instead of a count, which is all `usageCount == 0` ever used. Same tests pin it. De-duplicating patterns changes nothing observable.
+- **Important property of the input:** *every* `named:` / `Image("…")` argument becomes a `.regexp` usage, plain literals included (`FuncCallVisitor` appends `.regexp(StringVisitor(...).parse(), kind)`; `UIImage(named: "star")` yields `.regexp("star", .image)`), and literal segments are not escaped. So distinct patterns are *not* few: roughly a sixth of the image references in the synthetic fixtures, i.e. about a thousand distinct patterns on medium and several thousand on large. De-duplicating compiled regexes alone would leave R × patterns ≈ 10⁷ regex matches on large.
+- **Proposed fix (on top of F1):** index usages once per kind.
+  1. `Set<String>` of `.string` values, of `.rswift` identifiers, of `.generated` identifiers.
+  2. Split `.regexp` patterns: a pattern that is pure ASCII and contains no regex metacharacter (`\ ^ $ . | ? * + ( ) [ ] { }`) is equivalent to an exact name and goes into the exact-name set (`^p$` ⇔ `name == p`; restricted to ASCII because `String ==` uses canonical equivalence and `NSRegularExpression` does not; `$` also matches before a trailing line terminator, which a resource name — a file name — never contains). Only the remaining, genuinely dynamic patterns (interpolations, `// image: …` comment patterns) are compiled, once each.
+  3. A resource is used iff `names.contains(name) || rswift.contains(rswiftIdentifier) || generated.contains(generatedIdentifier) || dynamicRegexes.contains { matches }` — exact sets first, regexes last. Cost: O(R + U + R × dynamic patterns).
+- **Invalid patterns:** today there is no short-circuit, so an invalid pattern (e.g. `UIImage(named: "a(b")`) throws whenever *any* non-excluded resource of that kind exists. With lazy compilation plus short-circuiting it would silently stop throwing when every resource matches an exact set. To preserve behavior: compile all dynamic patterns of a kind eagerly as soon as the first non-excluded resource of that kind is seen. Note that `a(b` contains a metacharacter, so it stays on the regex path and still throws. Add a test before the change: an invalid pattern plus a resource matched by a `.string` usage must still throw (the existing `invalidPattern` test has a single unmatched resource and would not catch the regression).
+- **Expected gain:** to be measured. The exact part is linear; what remains is R × dynamic patterns. On the synthetic fixtures there is one dynamic pattern (`imgStep.*`), so `analyze` should fall to milliseconds there; on the production app it depends on how many interpolated names the code base has — count them (`usages` that fail the literal test) as the first step of the change.
+- **Behavior risk:** low–medium — membership instead of a count is safe (`usageCount == 0` is all that was ever used), but the literal-pattern shortcut and the invalid-pattern edge above are real semantics that need their own tests (literal with a metacharacter, non-ASCII literal, invalid pattern with all resources matched).
 - **Effort:** S–M
 
 ### F3. Discovery walks the same tree nine times, catalogs twice
 
-- **Where:** `Sources/SURCore/Discovery/Discovery.swift:11-34` (8 resource extensions + `swift`), `:37-58` (`kinds.flatMap` → one walk per kind), `Sources/SURCore/Utils/Path+Utils.swift:36-60`.
+- **Where:** `Sources/SURCore/Discovery/DiscoveredFiles.swift:11-34` (8 resource extensions + `swift`), `:37-58` (`kinds.flatMap` → one walk per kind), `Sources/SURCore/Utils/Path+Utils.swift:36-60`.
 - **Evidence:** 33 % of e2e on the production app (1.78 s), 97 % of it inside the enumerator.
-- **Proposed fix:** one walk per root that classifies each entry by extension into buckets (`descendants(withExtensions: Set<String>) -> [String: [Path]]`), then assemble `DiscoveredFiles` in today's order (extension order, each bucket sorted). Same for catalogs: one walk collecting `imageset` and `colorset`. Optionally prune: do not descend into `*.xcassets` (catalogs are expanded separately and everything inside is skipped anyway), `*.icon`, and into `*.imageset` / `*.colorset` once matched.
+- **Proposed fix:** one walk per root that classifies each entry by extension into buckets (`descendants(withExtensions: Set<String>) -> [String: [Path]]`), then assemble `DiscoveredFiles` in today's order (extension order, each bucket sorted). Same for catalogs: one walk collecting `imageset` and `colorset`. Pruning (not descending into `*.xcassets`, `*.icon`, matched `*.imageset` / `*.colorset`) is a separate, optional step with its own semantics: today a catalog nested inside another catalog is still found, `.swift` files inside a catalog are still collected (sources have no xcassets filter), and the `.icon` skip is case-insensitive and applies to resources only.
 - **Expected gain:** ≈ ÷9 for groups, ÷2 for catalogs, more with pruning: production app 1.78 s → ≈ 0.2 s; shows on `fs.discovery` and `e2e`.
-- **Behavior risk:** low — `DiscoveryTests` pins order and filtering; pruning needs one extra test (a catalog nested in a folder whose name contains "xcassets" is already handled by string matching today — keep that rule identical).
+- **Behavior risk:** low for the single walk — `DiscoveryTests` pins order and filtering. Medium for pruning: each of the three cases above needs a test first, or pruning must be limited to matched `*.imageset` / `*.colorset` directories, which is always safe.
 - **Effort:** S (single walk) / M (with pruning)
 
 ### F4. A faster enumerator
@@ -171,9 +179,9 @@ Sorted by expected gain ÷ risk.
 - **Behavior risk:** medium — hidden-entry semantics and the "called on a file, `skipDescendants()` skips the rest of the parent" workaround must be re-verified; `UtilsTests` covers part of it.
 - **Effort:** S, but only worth doing if the benchmark shows > 10 %.
 
-### F5. Xibs are parsed sequentially; the unused-size summary re-walks files
+### F5. Xibs are parsed sequentially
 
-- **Where:** `Explorer.explore(xib:)` via `explore(resources:)`; `Path.size` in the `analyze()` summary.
+- **Where:** `Explorer.explore(xib:)` via `explore(resources:)`.
 - **Evidence:** `xib.parse` 27 ms = 0.5 % of e2e today; after F1–F3 it becomes ≈ 5 % of a 0.5 s run.
 - **Proposed fix:** collect xib paths and parse them in the same task group style as Swift files (results sorted by path for determinism).
 - **Expected gain:** ≈ 20 ms on the production app. Only meaningful after F1–F3.
@@ -214,7 +222,7 @@ the dominant phase.
 
 ## Recommended order
 
-1. **F1 + F2** together (one change to one pure function, guarded by `UnusedResourcesTests` and the oracle). Re-run `--size medium --compare` and the production app.
+1. **F1 + F2** together (one change to one pure function, guarded by `UnusedResourcesTests` and the oracle). First add the missing tests (invalid pattern with matched resources, literal vs. metacharacter vs. non-ASCII patterns) and count dynamic patterns on the production app. Then re-run `--size medium --compare` and the production app.
 2. **F3** single-walk discovery, plus the ordering side finding.
-3. Re-measure. Expected state: production app ≈ 0.4–0.5 s e2e, with parse ≈ 25 %, discovery ≈ 40 %.
+3. Re-measure. Rough expectation for the production app: e2e around half a second, split mainly between discovery and parsing — an estimate, not a promise; the benchmark decides.
 4. Then decide on **F4–F6** from the new numbers; each must show > 10 % on its benchmark to be kept.
