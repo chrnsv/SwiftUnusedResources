@@ -7,6 +7,8 @@ PROJECT=${1:?Usage: Scripts/bench-e2e.sh <path/to/App.xcodeproj> [target] [runs]
 TARGET=${2:-}
 RUNS=${3:-10}
 
+PROJECT="$(cd "$(dirname "$PROJECT")" && pwd)/$(basename "$PROJECT")"
+
 cd "$(dirname "$0")/.."
 
 SKIP_SWIFTLINT=1 swift build -c release --product sur

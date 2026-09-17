@@ -1,6 +1,6 @@
 [tasks.build]
 description = "Build release binary"
-run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64"
+run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64 --product sur"
 
 [tasks.artifactbundle]
 description = "Create artifact bundle"

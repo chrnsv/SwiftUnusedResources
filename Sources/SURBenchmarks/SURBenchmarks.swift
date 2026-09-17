@@ -37,6 +37,20 @@ struct SURBenchmarks: AsyncParsableCommand {
     @Option(help: "Target of the real project. Recommended: the analyze phase uses the last processed target.")
     var target: String?
 
+    func validate() throws {
+        guard iterations >= 1 else {
+            throw ValidationError("--iterations must be at least 1")
+        }
+
+        guard warmup >= 0 else {
+            throw ValidationError("--warmup must not be negative")
+        }
+
+        guard maxSeconds >= 1 else {
+            throw ValidationError("--max-seconds must be at least 1")
+        }
+    }
+
     func run() async throws {
         #if DEBUG
         print("warning: debug build — numbers are not meaningful, use `swift run -c release SURBenchmarks`")
