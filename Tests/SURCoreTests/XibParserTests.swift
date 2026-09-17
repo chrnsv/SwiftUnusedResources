@@ -88,6 +88,52 @@ struct XibParserTests {
         #expect(usages.isEmpty)
     }
 
+    @Test("Ignores system colors")
+    func xibSystemColorIgnored() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        let systemColor = """
+        <systemColor name="systemBackgroundColor">
+            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+        </systemColor>
+        """
+
+        let path = try tmp.write("Test.xib", xibDocument(resources: systemColor + "\n" + colorResource))
+        let usages = try parser.parse(path)
+
+        #expect(usages == [.string("brandBackground", .color)])
+    }
+
+    @Test("Ignores elements outside of the resources section and tolerates unknown ones")
+    func xibElementsOutsideResources() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        let document = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <document type="com.apple.InterfaceBuilder3.CocoaTouch.XIB.XMLIB" version="3.0">
+            <objects>
+                <someFutureView id="abc">
+                    <image name="notAResource" width="1" height="1"/>
+                    <namedColor name="notAResourceEither"/>
+                </someFutureView>
+            </objects>
+            <resources>
+                <image name="header" width="100" height="100"/>
+                <someFutureResource name="ignored">
+                    <image name="nested" width="1" height="1"/>
+                </someFutureResource>
+            </resources>
+        </document>
+        """
+
+        let path = try tmp.write("Test.xib", document)
+        let usages = try parser.parse(path)
+
+        #expect(usages == [.string("header", .image)])
+    }
+
     // MARK: - Storyboard files
 
     @Test("Extracts images and colors from a storyboard")

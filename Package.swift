@@ -17,7 +17,6 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "604.0.0"),
         .package(url: "https://github.com/kylef/PathKit.git", from: "1.0.1"),
         .package(url: "https://github.com/tuist/XcodeProj.git", from: "9.17.1"),
-        .package(url: "https://github.com/IBDecodable/IBDecodable.git", from: "0.6.1"),
         .package(url: "https://github.com/onevcat/Rainbow.git", from: "4.2.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
         .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins.git", from: "0.65.1"),
@@ -48,7 +47,6 @@ let package = Package(
             dependencies:[
                 .product(name: "PathKit", package: "PathKit"),
                 .product(name: "XcodeProj", package: "XcodeProj"),
-                .product(name: "IBDecodable", package: "IBDecodable"),
                 .product(name: "Rainbow", package: "Rainbow"),
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),

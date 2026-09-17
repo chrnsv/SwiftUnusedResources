@@ -1,5 +1,5 @@
 {
-  "originHash" : "6bcb22018543eebe9bcec436ff017c25414af6ba052f0d7cbaf12ab7b2a0f314",
+  "originHash" : "3b33e8ca79d8792f369fcf42035a092ce71d0fa6b666284eb5787236bf8c6371",
   "pins" : [
     {
       "identity" : "aexml",
@@ -8,15 +8,6 @@
       "state" : {
         "revision" : "db806756c989760b35108146381535aec231092b",
         "version" : "4.7.0"
-      }
-    },
-    {
-      "identity" : "ibdecodable",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/IBDecodable/IBDecodable.git",
-      "state" : {
-        "revision" : "0ae1b9e7a297ac015cce3febf4c6b5c98474a823",
-        "version" : "0.6.1"
       }
     },
     {
@@ -71,15 +62,6 @@
       "state" : {
         "revision" : "ef7d692fc6706e8f5628e26bcafaefa445c58a97",
         "version" : "0.65.1"
-      }
-    },
-    {
-      "identity" : "swxmlhash",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/drmohundro/SWXMLHash.git",
-      "state" : {
-        "revision" : "a853604c9e9a83ad9954c7e3d2a565273982471f",
-        "version" : "7.0.2"
       }
     },
     {
