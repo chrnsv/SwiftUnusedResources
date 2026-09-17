@@ -100,7 +100,9 @@ and output add ~0.3 s to the in-process figure.
 
 Share of the e2e median (parse = the parallel variant, which is what `sur` runs). Shares can
 add up to slightly more than 100 %: the isolated phases ignore `sur.yml` exclusions and cover
-everything discovered, while `e2e` honors the exclusions.
+everything discovered, while `e2e` honors the exclusions (production app); on the synthetic
+fixtures, which have no `sur.yml`, the sub-percent excess is run-to-run noise between phases
+measured with different sample counts.
 
 | phase | small | medium | large | production app |
 |---|---|---|---|---|
@@ -151,10 +153,10 @@ Sorted by expected gain ÷ risk.
 
 - **Where:** same function.
 - **Evidence:** ×106 time for ×10 input; 10.5 min on the large fixture.
-- **Important property of the input:** *every* `named:` / `Image("…")` argument becomes a `.regexp` usage, plain literals included (`FuncCallVisitor` appends `.regexp(StringVisitor(...).parse(), kind)`; `UIImage(named: "star")` yields `.regexp("star", .image)`), and literal segments are not escaped. So distinct patterns are *not* few: roughly a sixth of the image references in the synthetic fixtures, i.e. about a thousand distinct patterns on medium and several thousand on large. De-duplicating compiled regexes alone would leave R × patterns ≈ 10⁷ regex matches on large.
+- **Important property of the input:** *every* `named:` / `Image("…")` argument becomes a `.regexp` usage, plain literals included (`FuncCallVisitor` appends `.regexp(StringVisitor(...).parse(), kind)`; `UIImage(named: "star")` yields `.regexp("star", .image)`), and literal segments are not escaped. So distinct patterns are *not* few: about a third of the image references in the synthetic fixtures (2 of the 6 reference forms), i.e. about a thousand distinct patterns on medium and several thousand on large after de-duplication. De-duplicating compiled regexes alone would still leave R × patterns in the order of 10⁷ regex matches on large.
 - **Proposed fix (on top of F1):** index usages once per kind.
   1. `Set<String>` of `.string` values, of `.rswift` identifiers, of `.generated` identifiers.
-  2. Split `.regexp` patterns: a pattern that is pure ASCII and contains no regex metacharacter (`\ ^ $ . | ? * + ( ) [ ] { }`) is equivalent to an exact name and goes into the exact-name set (`^p$` ⇔ `name == p`; restricted to ASCII because `String ==` uses canonical equivalence and `NSRegularExpression` does not; `$` also matches before a trailing line terminator, which a resource name — a file name — never contains). Only the remaining, genuinely dynamic patterns (interpolations, `// image: …` comment patterns) are compiled, once each.
+  2. Split `.regexp` patterns: a pattern that is pure ASCII and contains no regex metacharacter (`\ ^ $ . | ? * + ( ) [ ] { }`) is equivalent to an exact name and goes into the exact-name set (`^p$` ⇔ `name == p`; restricted to ASCII because `String ==` uses canonical equivalence and `NSRegularExpression` does not; `$` also matches before a trailing line terminator, so the exact path must additionally require that the resource name contains no line terminator — legal on APFS, absurd in practice — and fall back to the regex otherwise). Only the remaining, genuinely dynamic patterns (interpolations, `// image: …` comment patterns) are compiled, once each.
   3. A resource is used iff `names.contains(name) || rswift.contains(rswiftIdentifier) || generated.contains(generatedIdentifier) || dynamicRegexes.contains { matches }` — exact sets first, regexes last. Cost: O(R + U + R × dynamic patterns).
 - **Invalid patterns:** today there is no short-circuit, so an invalid pattern (e.g. `UIImage(named: "a(b")`) throws whenever *any* non-excluded resource of that kind exists. With lazy compilation plus short-circuiting it would silently stop throwing when every resource matches an exact set. To preserve behavior: compile all dynamic patterns of a kind eagerly as soon as the first non-excluded resource of that kind is seen. Note that `a(b` contains a metacharacter, so it stays on the regex path and still throws. Add a test before the change: an invalid pattern plus a resource matched by a `.string` usage must still throw (the existing `invalidPattern` test has a single unmatched resource and would not catch the regression).
 - **Expected gain:** to be measured. The exact part is linear; what remains is R × dynamic patterns. On the synthetic fixtures there is one dynamic pattern (`imgStep.*`), so `analyze` should fall to milliseconds there; on the production app it depends on how many interpolated names the code base has — count them (`usages` that fail the literal test) as the first step of the change.
