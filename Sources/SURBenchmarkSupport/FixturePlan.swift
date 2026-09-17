@@ -38,13 +38,13 @@ package func makeFixturePlan(_ spec: FixtureSpec) -> FixturePlan {
     // Asset catalogs: every 10th image set lives in the classic Legacy catalog.
     for (index, name) in images.enumerated() {
         let catalog = index.isMultiple(of: 10) ? "Legacy/Legacy.xcassets" : "App/Resources/Assets.xcassets"
-        files.append(.init(path: "\(catalog)/Group\(index / 50)/\(name).imageset/Contents.json", contents: contentsJSON))
+        files.append(.init(path: "\(catalog)/Group\(index / 50)/\(name).imageset/Contents.json", contents: kContentsJSON))
     }
 
     for (index, name) in colors.enumerated() {
         files.append(.init(
             path: "App/Resources/Assets.xcassets/Colors\(index / 50)/\(name).colorset/Contents.json",
-            contents: contentsJSON
+            contents: kContentsJSON
         ))
     }
 
@@ -96,7 +96,7 @@ package func makeFixturePlan(_ spec: FixtureSpec) -> FixturePlan {
     )
 }
 
-private let contentsJSON = """
+private let kContentsJSON = """
 {
   "info" : {
     "author" : "xcode",
@@ -179,7 +179,11 @@ private func swiftSource(index: Int, images: [String], colors: [String], usesSte
 
 private func xibSource(image: String?, color: String?) -> String {
     let imageLine = image.map { "        <image name=\"\($0)\" width=\"24\" height=\"24\"/>" } ?? ""
-    let colorLine = color.map { "        <namedColor name=\"\($0)\"><color red=\"1\" green=\"0\" blue=\"0\" alpha=\"1\" colorSpace=\"custom\" customColorSpace=\"sRGB\"/></namedColor>" } ?? ""
+    let colorLine = color.map {
+        "        <namedColor name=\"\($0)\">"
+            + "<color red=\"1\" green=\"0\" blue=\"0\" alpha=\"1\" colorSpace=\"custom\" customColorSpace=\"sRGB\"/>"
+            + "</namedColor>"
+    } ?? ""
 
     return """
     <?xml version="1.0" encoding="UTF-8"?>

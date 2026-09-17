@@ -1,7 +1,7 @@
 package struct FixtureSpec: Equatable, Sendable {
-    package static let small = FixtureSpec(swiftFiles: 100, imageSets: 150, colorSets: 40, looseImages: 10, xibs: 5)
-    package static let medium = FixtureSpec(swiftFiles: 1_000, imageSets: 1_500, colorSets: 400, looseImages: 100, xibs: 50)
-    package static let large = FixtureSpec(swiftFiles: 5_000, imageSets: 7_500, colorSets: 2_000, looseImages: 500, xibs: 200)
+    package static let small = Self(swiftFiles: 100, imageSets: 150, colorSets: 40, looseImages: 10, xibs: 5)
+    package static let medium = Self(swiftFiles: 1_000, imageSets: 1_500, colorSets: 400, looseImages: 100, xibs: 50)
+    package static let large = Self(swiftFiles: 5_000, imageSets: 7_500, colorSets: 2_000, looseImages: 500, xibs: 200)
 
     package var swiftFiles: Int
     package var imageSets: Int

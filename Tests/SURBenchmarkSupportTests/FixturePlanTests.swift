@@ -6,7 +6,10 @@ import Testing
 struct FixturePlanTests {
     @Test("Same spec, same plan")
     func deterministic() {
-        #expect(makeFixturePlan(.small) == makeFixturePlan(.small))
+        let first = makeFixturePlan(.small)
+        let second = makeFixturePlan(.small)
+
+        #expect(first == second)
     }
 
     @Test("Different seed, different plan")
