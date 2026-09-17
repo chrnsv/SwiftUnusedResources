@@ -30,6 +30,23 @@ extension Path {
         }
     }
 
+    /// Recursively finds files and directories with the given extension, like the `**/*.ext` glob:
+    /// the match is case-sensitive and skips hidden entries. Results are sorted.
+    func descendants(withExtension ext: String) -> [Path] {
+        guard let enumerator = FileManager.default.enumerator(atPath: string) else {
+            return []
+        }
+
+        return enumerator
+            .compactMap { $0 as? String }
+            .filter { subpath in
+                let name = NSString(string: subpath).lastPathComponent
+                return !name.hasPrefix(".") && NSString(string: name).pathExtension == ext
+            }
+            .sorted()
+            .map { self + $0 }
+    }
+
     func containsDirectory(withExtension ext: String) -> Bool {
         // Normalize the target extension: remove leading dot(s) and lowercase
         let normalizedExt = ext.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()

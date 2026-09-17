@@ -87,12 +87,21 @@ final class FixtureProject {
             )
             pbxproj.add(object: configurationList)
 
+            let synchronizedGroups = spec.synchronizedGroups.map { relative in
+                let group = PBXFileSystemSynchronizedRootGroup(sourceTree: .group, path: relative)
+                pbxproj.add(object: group)
+                mainGroup.children.append(group)
+
+                return group
+            }
+
             let target = PBXNativeTarget(
                 name: spec.name,
                 buildConfigurationList: configurationList,
                 buildPhases: [sourcesPhase, resourcesPhase],
                 productType: .application
             )
+            target.fileSystemSynchronizedGroups = synchronizedGroups
             pbxproj.add(object: target)
             nativeTargets.append(target)
         }
@@ -130,11 +139,13 @@ final class FixtureProject {
         let name: String
         let sources: [String]
         let resources: [String]
+        let synchronizedGroups: [String]
 
-        init(name: String, sources: [String] = [], resources: [String] = []) {
+        init(name: String, sources: [String] = [], resources: [String] = [], synchronizedGroups: [String] = []) {
             self.name = name
             self.sources = sources
             self.resources = resources
+            self.synchronizedGroups = synchronizedGroups
         }
     }
 }

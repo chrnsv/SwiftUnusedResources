@@ -1,5 +1,5 @@
 {
-  "originHash" : "c548b5a6a6dc7319381e12dcf716ec53494ea0e6bc371ca74acc649746b831fc",
+  "originHash" : "6bcb22018543eebe9bcec436ff017c25414af6ba052f0d7cbaf12ab7b2a0f314",
   "pins" : [
     {
       "identity" : "aexml",
@@ -8,15 +8,6 @@
       "state" : {
         "revision" : "db806756c989760b35108146381535aec231092b",
         "version" : "4.7.0"
-      }
-    },
-    {
-      "identity" : "glob",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Bouke/Glob.git",
-      "state" : {
-        "revision" : "deda6e163d2ff2a8d7e138e2c3326dbd71157faf",
-        "version" : "1.0.5"
       }
     },
     {
