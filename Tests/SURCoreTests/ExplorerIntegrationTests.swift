@@ -329,4 +329,34 @@ struct ExplorerIntegrationTests {
         let unused = try await unusedNames(in: fixture, target: "App")
         #expect(unused == ["lonely", "faded", "orphan"])
     }
+
+    @Test("Exposes the collected resources and usages of the last processed target")
+    func collectedInputs() async throws {
+        let fixture = try FixtureProject()
+        defer { fixture.remove() }
+
+        try fixture.addAssetCatalog("Assets.xcassets", imageSets: ["star", "lonely"])
+        try fixture.addSource("Main.swift", """
+        import UIKit
+
+        let image = UIImage(named: "star")
+        """)
+        try fixture.write(targets: [
+            .init(name: "App", sources: ["Main.swift"], resources: ["Assets.xcassets"]),
+        ])
+
+        let explorer = try Explorer(
+            projectPath: fixture.projectPath,
+            sourceRoot: fixture.root,
+            target: "App",
+            showWarnings: false,
+            quiet: true
+        )
+        try await explorer.explore()
+
+        let inputs = await explorer.collectedInputs()
+
+        #expect(Set(inputs.resources.map(\.name)) == ["star", "lonely"])
+        #expect(inputs.usages.contains(.regexp("star", .image)))
+    }
 }

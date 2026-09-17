@@ -56,10 +56,10 @@ struct PendingInitArgument: Sendable, Equatable {
 
 /// Everything one parsed Swift file contributes: the asset usages it directly proves, the
 /// initializer signatures it declares, and the pending init call sites awaiting resolution.
-struct SwiftParseResult: Sendable {
+package struct SwiftParseResult: Sendable {
     /// Source file path, used to merge per-file registries in a deterministic order.
     var path: String
-    var usages: [ExploreUsage]
+    package var usages: [ExploreUsage]
     var typeRegistry: InitializerRegistry
     var pendingInits: [PendingInitCall]
 }

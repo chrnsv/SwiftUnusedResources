@@ -2,7 +2,7 @@ import Foundation
 import SwiftParser
 import SwiftSyntax
 
-struct SwiftParser: Sendable {
+package struct SwiftParser: Sendable {
     private let showWarnings: Bool
     private let kinds: Set<ExploreKind>
     private let memberCallKinds: [String: ExploreKind]
@@ -20,6 +20,11 @@ struct SwiftParser: Sendable {
         self.propertyKinds = propertyKinds
     }
 
+    /// Parser with warnings off and the built-in symbol tables.
+    package init(kinds: Set<ExploreKind>) {
+        self.init(showWarnings: false, kinds: kinds)
+    }
+
     func parse(
         _ path: URL
     ) throws -> [ExploreUsage] {
@@ -35,7 +40,7 @@ struct SwiftParser: Sendable {
 
     /// Parses a file, returning not just the proven usages but also the initializer signatures
     /// it declares and the initializer call sites awaiting cross-file resolution.
-    func parseDetailed(
+    package func parseDetailed(
         _ path: URL
     ) throws -> SwiftParseResult {
         let file = try String(contentsOf: path)

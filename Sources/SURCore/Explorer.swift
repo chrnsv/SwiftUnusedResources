@@ -9,6 +9,7 @@ public final class Explorer {
     private let sourceRoot: Path
     private let target: String?
     private let showWarnings: Bool
+    private let quiet: Bool
     private let excludedResources: [String]
     private let excludedSources: [Path]
     private let excludedAssets: [String]
@@ -28,13 +29,15 @@ public final class Explorer {
         projectPath: Path,
         sourceRoot: Path,
         target: String?,
-        showWarnings: Bool
+        showWarnings: Bool,
+        quiet: Bool = false
     ) throws {
         self.projectPath = projectPath
         self.sourceRoot = sourceRoot
         self.target = target
         self.showWarnings = showWarnings
-        
+        self.quiet = quiet
+
         let configuration = Self.configuration(from: sourceRoot + "sur.yml")
         
         excludedSources = configuration?.exclude?.sources?
@@ -54,19 +57,33 @@ public final class Explorer {
     }
     
     public func explore() async throws {
-        print("🔨 Loading project \(projectPath.lastComponent)".bold)
+        log("🔨 Loading project \(projectPath.lastComponent)".bold)
         let xcodeproj = try XcodeProj(path: projectPath)
-        
+
         for target in xcodeproj.pbxproj.nativeTargets {
             if self.target == nil || (self.target != nil && target.name == self.target) {
-                print("📦 Processing target \(target.name)".bold)
+                log("📦 Processing target \(target.name)".bold)
                 try await explore(target: target)
             }
         }
-        
-        print("🦒 Complete".bold)
+
+        log("🦒 Complete".bold)
     }
-    
+
+    /// Resources and usages collected for the last processed target. For benchmarks and tests.
+    package func collectedInputs() async -> (resources: [ExploreResource], usages: [ExploreUsage]) {
+        (await storage.exploredResources, await storage.exploredUsages)
+    }
+
+    /// Progress and summary output; silenced by `quiet`. Warnings are not routed through here.
+    private func log(_ message: String) {
+        guard !quiet else {
+            return
+        }
+
+        print(message)
+    }
+
     private func analyze() async throws {
         let exploredResources = await storage.exploredResources
         let exploredUsages = await storage.exploredUsages
@@ -89,22 +106,22 @@ public final class Explorer {
         if !showWarnings {
             let unused = await storage.unused
             if !unused.isEmpty {
-                print("    \(unused.count) unused images found".yellow.bold)
+                log("    \(unused.count) unused images found".yellow.bold)
                 var totalSize = 0
                 unused.forEach { resource in
                     var name = resource.path
                     if name.starts(with: sourceRoot.string) {
                         name = String(resource.path.dropFirst(sourceRoot.string.count + 1))
                     }
-                    
+
                     let size = Path(resource.path).size
-                    print("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
+                    log("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
                     totalSize += size
                 }
-                print("    \(totalSize.humanFileSize) total".yellow)
+                log("    \(totalSize.humanFileSize) total".yellow)
             }
             else {
-                print("    No unused images found".lightGreen)
+                log("    No unused images found".lightGreen)
             }
         }
     }
@@ -116,7 +133,7 @@ public final class Explorer {
 
         guard let resources = try target.resourcesBuildPhase() else {
             // no sources, skip
-            print("    No resources, skip")
+            log("    No resources, skip")
             return
         }
         try await explore(resources: resources)
