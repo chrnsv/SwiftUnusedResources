@@ -67,71 +67,25 @@ public final class Explorer {
         print("🦒 Complete".bold)
     }
     
-    // swiftlint:disable:next cyclomatic_complexity
     private func analyze() async throws {
         let exploredResources = await storage.exploredResources
         let exploredUsages = await storage.exploredUsages
-        
-        for resource in exploredResources {
-            var usageCount = 0
-            
-            if excludedResources.contains(resource.name) {
-                continue
+
+        // Not named `unusedResources`: that would shadow the function inside its own initializer.
+        let found = try unusedResources(
+            in: exploredResources,
+            usages: exploredUsages,
+            excluding: excludedResources
+        )
+
+        for resource in found {
+            if showWarnings {
+                print(Self.warning(for: resource))
             }
-            
-            for usage in exploredUsages where usage.kind == resource.kind {
-                switch usage {
-                case .string(let value, _):
-                    if resource.name == value {
-                        usageCount += 1
-                    }
-                    
-                case .regexp(let pattern, _):
-                    let regex = try NSRegularExpression(pattern: "^\(pattern)$")
-                    
-                    let range = NSRange(location: 0, length: resource.name.utf16.count)
-                    if regex.firstMatch(in: resource.name, options: [], range: range) != nil {
-                        usageCount += 1
-                    }
-                    
-                case .rswift(let identifier, _):
-                    let rswift = SwiftIdentifier(name: resource.name)
-                    if rswift.description == identifier {
-                        usageCount += 1
-                    }
-                    
-                case .generated(let identifier, _):
-                    let name = SwiftIdentifier(name: resource.name).description.withoutImageAndColor()
-                    
-                    if name == identifier {
-                        usageCount += 1
-                    }
-                }
-            }
-            
-            if usageCount == 0 {
-                switch resource.type {
-                case .asset(let assets):
-                    if showWarnings {
-                        var name = resource.name
-                        if resource.path.starts(with: assets) {
-                            let relativePath = resource.path.dropFirst(assets.count).drop { $0 == "/" }
-                            name = NSString(string: String(relativePath)).deletingPathExtension
-                        }
-                        
-                        print("\(assets): warning: '\(name)' never used")
-                    }
-                    await storage.addUnused(resource)
-                    
-                case .file:
-                    if showWarnings {
-                        print("\(resource.path): warning: '\(resource.name)' never used")
-                    }
-                    await storage.addUnused(resource)
-                }
-            }
+
+            await storage.addUnused(resource)
         }
-        
+
         if !showWarnings {
             let unused = await storage.unused
             if !unused.isEmpty {
@@ -394,6 +348,23 @@ private extension Explorer {
         let data = try? Data(contentsOf: path.url)
         return data.flatMap { try? decoder.decode(Configuration.self, from: $0) }
     }
+
+    /// Xcode-style warning line for an unused resource.
+    static func warning(for resource: ExploreResource) -> String {
+        switch resource.type {
+        case .asset(let assets):
+            var name = resource.name
+            if resource.path.starts(with: assets) {
+                let relativePath = resource.path.dropFirst(assets.count).drop { $0 == "/" }
+                name = NSString(string: String(relativePath)).deletingPathExtension
+            }
+
+            return "\(assets): warning: '\(name)' never used"
+
+        case .file:
+            return "\(resource.path): warning: '\(resource.name)' never used"
+        }
+    }
 }
 
 private extension ExploreKind {
@@ -401,17 +372,6 @@ private extension ExploreKind {
         switch self {
         case .image: "imageset"
         case .color: "colorset"
-        }
-    }
-}
-
-private extension ExploreUsage {
-    var kind: ExploreKind {
-        switch self {
-        case .string(_, let kind): kind
-        case .regexp(_, let kind): kind
-        case .rswift(_, let kind): kind
-        case .generated(_, let kind): kind
         }
     }
 }

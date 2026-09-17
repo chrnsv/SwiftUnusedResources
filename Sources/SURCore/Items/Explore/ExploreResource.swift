@@ -7,14 +7,14 @@
 
 import Foundation
 
-struct ExploreResource: Sendable {
+package struct ExploreResource: Sendable {
     let name: String
     let type: ResourceType
     let kind: ExploreKind
     let path: String
     var usedCount: Int = 0
-    
-    enum ResourceType: Sendable {
+
+    package enum ResourceType: Sendable {
         case asset(assets: String)
         case file
     }
