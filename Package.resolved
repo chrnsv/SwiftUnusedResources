@@ -1,5 +1,5 @@
 {
-  "originHash" : "c548b5a6a6dc7319381e12dcf716ec53494ea0e6bc371ca74acc649746b831fc",
+  "originHash" : "3b33e8ca79d8792f369fcf42035a092ce71d0fa6b666284eb5787236bf8c6371",
   "pins" : [
     {
       "identity" : "aexml",
@@ -8,24 +8,6 @@
       "state" : {
         "revision" : "db806756c989760b35108146381535aec231092b",
         "version" : "4.7.0"
-      }
-    },
-    {
-      "identity" : "glob",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Bouke/Glob.git",
-      "state" : {
-        "revision" : "deda6e163d2ff2a8d7e138e2c3326dbd71157faf",
-        "version" : "1.0.5"
-      }
-    },
-    {
-      "identity" : "ibdecodable",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/IBDecodable/IBDecodable.git",
-      "state" : {
-        "revision" : "0ae1b9e7a297ac015cce3febf4c6b5c98474a823",
-        "version" : "0.6.1"
       }
     },
     {
@@ -80,15 +62,6 @@
       "state" : {
         "revision" : "ef7d692fc6706e8f5628e26bcafaefa445c58a97",
         "version" : "0.65.1"
-      }
-    },
-    {
-      "identity" : "swxmlhash",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/drmohundro/SWXMLHash.git",
-      "state" : {
-        "revision" : "a853604c9e9a83ad9954c7e3d2a565273982471f",
-        "version" : "7.0.2"
       }
     },
     {

@@ -1,5 +1,4 @@
 import Foundation
-import Glob
 import PathKit
 import Rainbow
 import XcodeProj
@@ -116,7 +115,8 @@ public final class Explorer {
                     if showWarnings {
                         var name = resource.name
                         if resource.path.starts(with: assets) {
-                            name = NSString(string: String(resource.path.dropFirst(assets.count))).deletingPathExtension
+                            let relativePath = resource.path.dropFirst(assets.count).drop { $0 == "/" }
+                            name = NSString(string: String(relativePath)).deletingPathExtension
                         }
                         
                         print("\(assets): warning: '\(name)' never used")
@@ -189,12 +189,11 @@ public final class Explorer {
             let extensions = ["png", "jpg", "pdf", "gif", "svg", "xcassets", "xib", "storyboard"]
             
             for ext in extensions {
-                for resource in Glob(pattern: path.string + "**/*.\(ext)") {
-                    if ext != "xcassets" && resource.contains("xcassets") {
+                for resourcePath in path.descendants(withExtension: ext) {
+                    if ext != "xcassets" && resourcePath.string.contains("xcassets") {
                         continue
                     }
 
-                    let resourcePath = Path(resource)
                     if resourcePath.containsDirectory(withExtension: "icon") {
                         continue
                     }
@@ -203,8 +202,7 @@ public final class Explorer {
                 }
             }
             
-            let sources = Glob(pattern: path.string + "**/*.swift")
-                .map { Path($0) }
+            let sources = path.descendants(withExtension: "swift")
             
             try await explore(files: sources)
         }
@@ -284,8 +282,7 @@ public final class Explorer {
             return []
         }
         
-        let resources = Glob(pattern: path.string + kind.assets)
-            .map { Path($0) }
+        let resources = path.descendants(withExtension: kind.assetExtension)
             .filter { !$0.containsDirectory(withExtension: "icon") }
             .map {
                 ExploreResource(
@@ -400,10 +397,10 @@ private extension Explorer {
 }
 
 private extension ExploreKind {
-    var assets: String {
+    var assetExtension: String {
         switch self {
-        case .image: "**/*.imageset"
-        case .color: "**/*.colorset"
+        case .image: "imageset"
+        case .color: "colorset"
         }
     }
 }

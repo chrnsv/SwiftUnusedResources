@@ -146,4 +146,97 @@ struct UtilsTests {
 
         #expect(tmp.path.size == 0)
     }
+
+    // MARK: - Path.descendants(withExtension:)
+
+    @Test("Finds files at the root and in nested directories, sorted")
+    func descendantsFindsNestedFiles() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("b.swift", "")
+        try tmp.write("nested/deep/a.swift", "")
+        try tmp.write("nested/c.txt", "")
+
+        #expect(tmp.path.descendants(withExtension: "swift") == [
+            tmp.path + "b.swift",
+            tmp.path + "nested/deep/a.swift",
+        ])
+    }
+
+    @Test("Matches directories and keeps descending into them")
+    func descendantsMatchesDirectories() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("Assets.xcassets/Icon.imageset/Contents.json", "{}")
+        try tmp.write("Assets.xcassets/Group/Nested.imageset/Contents.json", "{}")
+
+        #expect(tmp.path.descendants(withExtension: "xcassets") == [tmp.path + "Assets.xcassets"])
+        #expect(tmp.path.descendants(withExtension: "imageset") == [
+            tmp.path + "Assets.xcassets/Group/Nested.imageset",
+            tmp.path + "Assets.xcassets/Icon.imageset",
+        ])
+    }
+
+    @Test("Does not match the receiver itself")
+    func descendantsExcludesReceiver() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        let assets = tmp.path + "Assets.xcassets"
+        try assets.mkpath()
+
+        #expect(assets.descendants(withExtension: "xcassets").isEmpty)
+    }
+
+    @Test("Skips hidden files and does not descend into hidden directories")
+    func descendantsHiddenEntries() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write(".hidden.swift", "")
+        try tmp.write(".cache/a.swift", "")
+        try tmp.write(".build/checkouts/Dependency/b.swift", "")
+        try tmp.write("visible/.nested/c.swift", "")
+        try tmp.write("visible/d.swift", "")
+
+        #expect(tmp.path.descendants(withExtension: "swift") == [tmp.path + "visible/d.swift"])
+    }
+
+    @Test("A hidden file does not hide its siblings")
+    func descendantsHiddenFileKeepsSiblings() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("dir/.DS_Store", "")
+        try tmp.write("dir/a.swift", "")
+        try tmp.write("dir/nested/b.swift", "")
+        try tmp.write("dir/z.swift", "")
+
+        #expect(tmp.path.descendants(withExtension: "swift") == [
+            tmp.path + "dir/a.swift",
+            tmp.path + "dir/nested/b.swift",
+            tmp.path + "dir/z.swift",
+        ])
+    }
+
+    @Test("Matches the extension case-sensitively")
+    func descendantsCaseSensitive() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("a.PNG", "")
+        try tmp.write("b.png", "")
+
+        #expect(tmp.path.descendants(withExtension: "png") == [tmp.path + "b.png"])
+    }
+
+    @Test("Returns nothing for a nonexistent path")
+    func descendantsOfNonexistentPath() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        #expect((tmp.path + "missing").descendants(withExtension: "swift").isEmpty)
+    }
 }

@@ -307,4 +307,26 @@ struct ExplorerIntegrationTests {
         let unused = try await unusedNames(in: fixture, target: "App")
         #expect(unused == ["banner"])
     }
+
+    @Test("Discovers sources and resources inside a file system synchronized group")
+    func synchronizedGroupExplored() async throws {
+        let fixture = try FixtureProject()
+        defer { fixture.remove() }
+
+        try fixture.addAssetCatalog("App/Assets.xcassets", imageSets: ["star", "lonely"], colorSets: ["faded"])
+        try fixture.addLooseImage("App/Images/banner.png")
+        try fixture.addLooseImage("App/Images/orphan.png")
+        try fixture.addSource("App/Nested/Main.swift", """
+        import UIKit
+
+        let star = UIImage(named: "star")
+        let banner = UIImage(named: "banner")
+        """)
+        try fixture.write(targets: [
+            .init(name: "App", synchronizedGroups: ["App"]),
+        ])
+
+        let unused = try await unusedNames(in: fixture, target: "App")
+        #expect(unused == ["lonely", "faded", "orphan"])
+    }
 }

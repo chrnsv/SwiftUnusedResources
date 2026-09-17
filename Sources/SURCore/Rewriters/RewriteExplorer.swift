@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Glob
 @preconcurrency import PathKit
 import Rainbow
 import XcodeProj
@@ -78,8 +77,7 @@ public struct RewriteExplorer: Sendable {
             }
             
             // Find all Swift files in the group
-            let sources = Glob(pattern: path.string + "**/*.swift")
-                .map { Path($0) }
+            let sources = path.descendants(withExtension: "swift")
                 .filter { !excludedSources.contains($0) }
             
             try await explore(files: sources, rewriterTypes: rewriterTypes)
@@ -206,11 +204,9 @@ extension RewriteExplorer {
     /// Find XCStrings catalogs in the project
     private static func findXCStringsCatalogs(in projectURL: URL) -> Set<String> {
         let projectPath = Path(projectURL.path)
-        let catalogPattern = projectPath.string + "**/*.xcstrings"
         
         var catalogs = Set<String>()
-        for catalogPath in Glob(pattern: catalogPattern) {
-            let path = Path(catalogPath)
+        for path in projectPath.descendants(withExtension: "xcstrings") {
             let catalogName = path.lastComponentWithoutExtension.lowercased()
             catalogs.insert(catalogName)
         }
