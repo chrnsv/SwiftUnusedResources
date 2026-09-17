@@ -190,15 +190,35 @@ struct UtilsTests {
         #expect(assets.descendants(withExtension: "xcassets").isEmpty)
     }
 
-    @Test("Skips hidden entries but looks inside hidden directories")
+    @Test("Skips hidden files and does not descend into hidden directories")
     func descendantsHiddenEntries() throws {
         let tmp = try TemporaryDirectory()
         defer { tmp.remove() }
 
         try tmp.write(".hidden.swift", "")
         try tmp.write(".cache/a.swift", "")
+        try tmp.write(".build/checkouts/Dependency/b.swift", "")
+        try tmp.write("visible/.nested/c.swift", "")
+        try tmp.write("visible/d.swift", "")
 
-        #expect(tmp.path.descendants(withExtension: "swift") == [tmp.path + ".cache/a.swift"])
+        #expect(tmp.path.descendants(withExtension: "swift") == [tmp.path + "visible/d.swift"])
+    }
+
+    @Test("A hidden file does not hide its siblings")
+    func descendantsHiddenFileKeepsSiblings() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("dir/.DS_Store", "")
+        try tmp.write("dir/a.swift", "")
+        try tmp.write("dir/nested/b.swift", "")
+        try tmp.write("dir/z.swift", "")
+
+        #expect(tmp.path.descendants(withExtension: "swift") == [
+            tmp.path + "dir/a.swift",
+            tmp.path + "dir/nested/b.swift",
+            tmp.path + "dir/z.swift",
+        ])
     }
 
     @Test("Matches the extension case-sensitively")

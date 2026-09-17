@@ -31,18 +31,30 @@ extension Path {
     }
 
     /// Recursively finds files and directories with the given extension, like the `**/*.ext` glob:
-    /// the match is case-sensitive and skips hidden entries. Results are sorted.
+    /// the match is case-sensitive. Hidden entries are skipped, including everything inside
+    /// hidden directories. Results are sorted.
     func descendants(withExtension ext: String) -> [Path] {
         guard let enumerator = FileManager.default.enumerator(atPath: string) else {
             return []
         }
 
-        return enumerator
-            .compactMap { $0 as? String }
-            .filter { subpath in
-                let name = NSString(string: subpath).lastPathComponent
-                return !name.hasPrefix(".") && NSString(string: name).pathExtension == ext
+        var subpaths: [String] = []
+
+        while let subpath = enumerator.nextObject() as? String {
+            let name = NSString(string: subpath).lastPathComponent
+
+            if name.hasPrefix(".") {
+                // Called on a file, `skipDescendants()` skips the rest of its parent directory
+                if enumerator.fileAttributes?[.type] as? FileAttributeType == .typeDirectory {
+                    enumerator.skipDescendants()
+                }
             }
+            else if NSString(string: name).pathExtension == ext {
+                subpaths.append(subpath)
+            }
+        }
+
+        return subpaths
             .sorted()
             .map { self + $0 }
     }
