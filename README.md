@@ -10,6 +10,28 @@
 mint install mugabe/SwiftUnusedResources
 ```
 
+### Using [mise](https://mise.jdx.dev)
+
+```shell
+# install globally
+mise use -g github:mugabe/SwiftUnusedResources
+
+# or add it to the current project
+mise use github:mugabe/SwiftUnusedResources
+```
+
+Alternatively, add it to your project's `mise.toml` by hand and run `mise install`:
+
+```toml
+[tools]
+"github:mugabe/SwiftUnusedResources" = "latest"
+```
+
+Replace `latest` with a release tag to pin a specific version.
+
+mise downloads the prebuilt binary from GitHub releases, so no Swift toolchain is needed.
+The binary is built for Apple silicon only.
+
 ### Compile from source
 
 ```shell
