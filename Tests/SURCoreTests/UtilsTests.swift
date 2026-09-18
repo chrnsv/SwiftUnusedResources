@@ -179,6 +179,25 @@ struct UtilsTests {
         ])
     }
 
+    @Test("One walk buckets several extensions, each bucket sorted, absent extensions empty")
+    func descendantsWithExtensions() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("b.swift", "")
+        try tmp.write("nested/a.swift", "")
+        try tmp.write("nested/logo.png", "")
+        try tmp.write("Assets.xcassets/Icon.imageset/icon.png", "")
+
+        let buckets = tmp.path.descendants(withExtensions: ["swift", "png", "xcassets", "pdf"])
+
+        #expect(buckets["swift"] == [tmp.path + "b.swift", tmp.path + "nested/a.swift"])
+        #expect(buckets["png"] == [tmp.path + "Assets.xcassets/Icon.imageset/icon.png", tmp.path + "nested/logo.png"])
+        #expect(buckets["xcassets"] == [tmp.path + "Assets.xcassets"])
+        #expect(buckets["pdf"]?.isEmpty == true)
+        #expect(buckets["imageset"] == nil)
+    }
+
     @Test("Does not match the receiver itself")
     func descendantsExcludesReceiver() throws {
         let tmp = try TemporaryDirectory()

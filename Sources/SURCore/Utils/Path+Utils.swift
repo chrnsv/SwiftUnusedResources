@@ -34,11 +34,21 @@ extension Path {
     /// the match is case-sensitive. Hidden entries are skipped, including everything inside
     /// hidden directories. Results are sorted.
     func descendants(withExtension ext: String) -> [Path] {
-        guard let enumerator = FileManager.default.enumerator(atPath: string) else {
-            return []
+        descendants(withExtensions: [ext])[ext] ?? []
+    }
+
+    /// Same as `descendants(withExtension:)` for several extensions in a single walk of the
+    /// tree. Every requested extension has an entry (possibly empty); each entry is sorted.
+    func descendants(withExtensions extensions: Set<String>) -> [String: [Path]] {
+        var subpaths: [String: [String]] = [:]
+
+        for ext in extensions {
+            subpaths[ext] = []
         }
 
-        var subpaths: [String] = []
+        guard let enumerator = FileManager.default.enumerator(atPath: string) else {
+            return subpaths.mapValues { _ in [] }
+        }
 
         while let subpath = enumerator.nextObject() as? String {
             let name = NSString(string: subpath).lastPathComponent
@@ -49,14 +59,20 @@ extension Path {
                     enumerator.skipDescendants()
                 }
             }
-            else if NSString(string: name).pathExtension == ext {
-                subpaths.append(subpath)
+            else {
+                let ext = NSString(string: name).pathExtension
+
+                if extensions.contains(ext) {
+                    subpaths[ext, default: []].append(subpath)
+                }
             }
         }
 
-        return subpaths
-            .sorted()
-            .map { self + $0 }
+        return subpaths.mapValues { paths in
+            paths
+                .sorted()
+                .map { self + $0 }
+        }
     }
 
     func containsDirectory(withExtension ext: String) -> Bool {
