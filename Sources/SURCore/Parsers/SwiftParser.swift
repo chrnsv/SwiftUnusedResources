@@ -43,7 +43,8 @@ package struct SwiftParser: Sendable {
     package func parseDetailed(
         _ path: URL
     ) throws -> SwiftParseResult {
-        let file = try String(contentsOf: path)
+        // UTF-8 first: skips Foundation's encoding sniffing. Anything else falls back to it.
+        let file = try (try? String(contentsOf: path, encoding: .utf8)) ?? String(contentsOf: path)
         return parseDetailed(source: file, at: path)
     }
 
