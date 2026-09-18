@@ -38,7 +38,7 @@ struct RToXcode: AsyncParsableCommand {
     @Flag(name: .long, help: "Rewrite assets")
     var assets: Bool = false
     
-    @Option(help: "Paths to exclude from rewriting")
+    @Option(help: "Paths to exclude from rewriting, absolute or relative to the source root")
     var exclude: [String] = []
     
     mutating func run() async throws {
@@ -71,7 +71,9 @@ struct RToXcode: AsyncParsableCommand {
         }
         
         // Convert excluded paths
-        let excludedSources = exclude.map { Path($0) }
+        let excludedSources = exclude
+            .map { Path($0) }
+            .map { $0.isAbsolute ? $0 : sourceRoot + $0 }
         
         // Create explorer and run
         let explorer = RewriteExplorer(

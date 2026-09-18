@@ -1,6 +1,6 @@
 # SUR
 
-`sur` is a command-line tool that finds unused images and colors in the asset catalogs of an Xcode project.
+`sur` is a command-line tool that finds unused images and colors in an Xcode project: asset catalog contents as well as standalone image files (`png`, `jpg`, `pdf`, `gif`, `svg`).
 
 ## Installation
 
@@ -189,6 +189,7 @@ sur r-to-xcode path/to/App.xcodeproj --target App --dry-run
 sur r-to-xcode path/to/App.xcodeproj --assets --exclude Sources/Generated/R.generated.swift
 ```
 
+`--exclude` paths are absolute or relative to the source root (the directory containing the `.xcodeproj`, unless `--source-root` is given).
 Run `sur r-to-xcode --help` for the full list of options.
 
 ## Benchmarks
