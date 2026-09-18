@@ -1,5 +1,4 @@
 import Foundation
-import Glob
 import PathKit
 import Rainbow
 import XcodeProj
@@ -10,6 +9,7 @@ public final class Explorer {
     private let sourceRoot: Path
     private let target: String?
     private let showWarnings: Bool
+    private let quiet: Bool
     private let excludedResources: [String]
     private let excludedSources: [Path]
     private let excludedAssets: [String]
@@ -29,13 +29,15 @@ public final class Explorer {
         projectPath: Path,
         sourceRoot: Path,
         target: String?,
-        showWarnings: Bool
+        showWarnings: Bool,
+        quiet: Bool = false
     ) throws {
         self.projectPath = projectPath
         self.sourceRoot = sourceRoot
         self.target = target
         self.showWarnings = showWarnings
-        
+        self.quiet = quiet
+
         let configuration = Self.configuration(from: sourceRoot + "sur.yml")
         
         excludedSources = configuration?.exclude?.sources?
@@ -55,102 +57,71 @@ public final class Explorer {
     }
     
     public func explore() async throws {
-        print("🔨 Loading project \(projectPath.lastComponent)".bold)
+        log("🔨 Loading project \(projectPath.lastComponent)".bold)
         let xcodeproj = try XcodeProj(path: projectPath)
-        
+
         for target in xcodeproj.pbxproj.nativeTargets {
             if self.target == nil || (self.target != nil && target.name == self.target) {
-                print("📦 Processing target \(target.name)".bold)
+                log("📦 Processing target \(target.name)".bold)
                 try await explore(target: target)
             }
         }
-        
-        print("🦒 Complete".bold)
+
+        log("🦒 Complete".bold)
     }
-    
-    // swiftlint:disable:next cyclomatic_complexity
+
+    /// Resources and usages collected for the last processed target. For benchmarks and tests.
+    package func collectedInputs() async -> (resources: [ExploreResource], usages: [ExploreUsage]) {
+        (await storage.exploredResources, await storage.exploredUsages)
+    }
+
+    /// Progress and summary output; silenced by `quiet`. Warnings are not routed through here.
+    private func log(_ message: String) {
+        guard !quiet else {
+            return
+        }
+
+        print(message)
+    }
+
     private func analyze() async throws {
         let exploredResources = await storage.exploredResources
         let exploredUsages = await storage.exploredUsages
-        
-        for resource in exploredResources {
-            var usageCount = 0
-            
-            if excludedResources.contains(resource.name) {
-                continue
+
+        // Not named `unusedResources`: that would shadow the function inside its own initializer.
+        let found = try unusedResources(
+            in: exploredResources,
+            usages: exploredUsages,
+            excluding: excludedResources
+        )
+
+        for resource in found {
+            if showWarnings {
+                print(Self.warning(for: resource))
             }
-            
-            for usage in exploredUsages where usage.kind == resource.kind {
-                switch usage {
-                case .string(let value, _):
-                    if resource.name == value {
-                        usageCount += 1
-                    }
-                    
-                case .regexp(let pattern, _):
-                    let regex = try NSRegularExpression(pattern: "^\(pattern)$")
-                    
-                    let range = NSRange(location: 0, length: resource.name.utf16.count)
-                    if regex.firstMatch(in: resource.name, options: [], range: range) != nil {
-                        usageCount += 1
-                    }
-                    
-                case .rswift(let identifier, _):
-                    let rswift = SwiftIdentifier(name: resource.name)
-                    if rswift.description == identifier {
-                        usageCount += 1
-                    }
-                    
-                case .generated(let identifier, _):
-                    let name = SwiftIdentifier(name: resource.name).description.withoutImageAndColor()
-                    
-                    if name == identifier {
-                        usageCount += 1
-                    }
-                }
-            }
-            
-            if usageCount == 0 {
-                switch resource.type {
-                case .asset(let assets):
-                    if showWarnings {
-                        var name = resource.name
-                        if resource.path.starts(with: assets) {
-                            name = NSString(string: String(resource.path.dropFirst(assets.count))).deletingPathExtension
-                        }
-                        
-                        print("\(assets): warning: '\(name)' never used")
-                    }
-                    await storage.addUnused(resource)
-                    
-                case .file:
-                    if showWarnings {
-                        print("\(resource.path): warning: '\(resource.name)' never used")
-                    }
-                    await storage.addUnused(resource)
-                }
-            }
+
+            await storage.addUnused(resource)
         }
-        
+
         if !showWarnings {
             let unused = await storage.unused
             if !unused.isEmpty {
-                print("    \(unused.count) unused images found".yellow.bold)
+                log("    \(unused.count) unused images found".yellow.bold)
                 var totalSize = 0
                 unused.forEach { resource in
                     var name = resource.path
                     if name.starts(with: sourceRoot.string) {
                         name = String(resource.path.dropFirst(sourceRoot.string.count + 1))
                     }
-                    
+
                     let size = Path(resource.path).size
-                    print("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
+                    log("     \(size.humanFileSize.padding(toLength: 10, withPad: " ", startingAt: 0)) \(name)")
                     totalSize += size
                 }
-                print("    \(totalSize.humanFileSize) total".yellow)
+                log("    \(totalSize.humanFileSize) total".yellow)
             }
             else {
-                print("    No unused images found".lightGreen)
+                log("    No unused images found".lightGreen)
             }
         }
     }
@@ -162,7 +133,7 @@ public final class Explorer {
 
         guard let resources = try target.resourcesBuildPhase() else {
             // no sources, skip
-            print("    No resources, skip")
+            log("    No resources, skip")
             return
         }
         try await explore(resources: resources)
@@ -185,28 +156,11 @@ public final class Explorer {
             guard let path = try group.fullPath(sourceRoot: sourceRoot) else {
                 continue
             }
-            
-            let extensions = ["png", "jpg", "pdf", "gif", "svg", "xcassets", "xib", "storyboard"]
-            
-            for ext in extensions {
-                for resource in Glob(pattern: path.string + "**/*.\(ext)") {
-                    if ext != "xcassets" && resource.contains("xcassets") {
-                        continue
-                    }
 
-                    let resourcePath = Path(resource)
-                    if resourcePath.containsDirectory(withExtension: "icon") {
-                        continue
-                    }
-                    
-                    try await explore(resource: resourcePath)
-                }
-            }
-            
-            let sources = Glob(pattern: path.string + "**/*.swift")
-                .map { Path($0) }
-            
-            try await explore(files: sources)
+            let discovered = discoverFiles(inSynchronizedGroup: path)
+
+            try await explore(resources: discovered.resources)
+            try await explore(files: discovered.sources)
         }
     }
     
@@ -273,30 +227,7 @@ public final class Explorer {
     }
     
     private func explore(xcassets path: Path) async throws {
-        let resources = kinds
-            .flatMap { explore(xcassets: path, kind: $0) }
-        
-        await storage.addResources(resources)
-    }
-    
-    private func explore(xcassets path: Path, kind: ExploreKind) -> [ExploreResource] {
-        guard !excludedAssets.contains(path.lastComponentWithoutExtension) else {
-            return []
-        }
-        
-        let resources = Glob(pattern: path.string + kind.assets)
-            .map { Path($0) }
-            .filter { !$0.containsDirectory(withExtension: "icon") }
-            .map {
-                ExploreResource(
-                    name: $0.lastComponentWithoutExtension,
-                    type: .asset(assets: path.string),
-                    kind: kind,
-                    path: $0.absolute().string
-                )
-            }
-        
-        return resources
+        await storage.addResources(assetResources(in: path, kinds: kinds, excludedAssets: excludedAssets))
     }
     
     private func explore(image path: Path) async throws {
@@ -397,24 +328,21 @@ private extension Explorer {
         let data = try? Data(contentsOf: path.url)
         return data.flatMap { try? decoder.decode(Configuration.self, from: $0) }
     }
-}
 
-private extension ExploreKind {
-    var assets: String {
-        switch self {
-        case .image: "**/*.imageset"
-        case .color: "**/*.colorset"
-        }
-    }
-}
+    /// Xcode-style warning line for an unused resource.
+    static func warning(for resource: ExploreResource) -> String {
+        switch resource.type {
+        case .asset(let assets):
+            var name = resource.name
+            if resource.path.starts(with: assets) {
+                let relativePath = resource.path.dropFirst(assets.count).drop { $0 == "/" }
+                name = NSString(string: String(relativePath)).deletingPathExtension
+            }
 
-private extension ExploreUsage {
-    var kind: ExploreKind {
-        switch self {
-        case .string(_, let kind): kind
-        case .regexp(_, let kind): kind
-        case .rswift(_, let kind): kind
-        case .generated(_, let kind): kind
+            return "\(assets): warning: '\(name)' never used"
+
+        case .file:
+            return "\(resource.path): warning: '\(resource.name)' never used"
         }
     }
 }
@@ -430,11 +358,10 @@ private extension Configuration.Kind {
 
 extension String {
     func withoutImageAndColor() -> String {
-        let input = self
-        let pattern = "(?i)(image|color)+$"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [])
-        let range = NSRange(location: 0, length: input.utf16.count)
-        let modifiedString = regex?.stringByReplacingMatches(in: input, options: [], range: range, withTemplate: "")
-        return modifiedString ?? input
+        let range = NSRange(location: 0, length: utf16.count)
+        return kImageAndColorSuffix.stringByReplacingMatches(in: self, options: [], range: range, withTemplate: "")
     }
 }
+
+// swiftlint:disable:next force_try
+private let kImageAndColorSuffix = try! NSRegularExpression(pattern: "(?i)(image|color)+$", options: [])

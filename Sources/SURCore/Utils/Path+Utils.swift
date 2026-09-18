@@ -30,6 +30,59 @@ extension Path {
         }
     }
 
+    /// Recursively finds files and directories with the given extension, like the `**/*.ext` glob:
+    /// the match is case-sensitive. Hidden entries are skipped, including everything inside
+    /// hidden directories. Results are sorted.
+    func descendants(withExtension ext: String) -> [Path] {
+        descendants(withExtensions: [ext])[ext] ?? []
+    }
+
+    /// Same as `descendants(withExtension:)` for several extensions in a single walk of the
+    /// tree. Every requested extension has an entry (possibly empty); each entry is sorted.
+    /// A matched directory whose extension is in `pruning` is listed but not descended into.
+    func descendants(withExtensions extensions: Set<String>, pruning: Set<String> = []) -> [String: [Path]] {
+        var subpaths: [String: [String]] = [:]
+
+        for ext in extensions {
+            subpaths[ext] = []
+        }
+
+        // The URL enumerator fetches directory flags in bulk; the path-based one stats every entry.
+        let enumerator = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: string, isDirectory: true),
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.producesRelativePathURLs]
+        )
+
+        guard let enumerator else {
+            return subpaths.mapValues { _ in [] }
+        }
+
+        while let url = enumerator.nextObject() as? URL {
+            let name = url.lastPathComponent
+
+            if name.hasPrefix(".") {
+                // Called on a file, `skipDescendants()` skips the rest of its parent directory
+                if url.isDirectoryResource {
+                    enumerator.skipDescendants()
+                }
+            }
+            else if extensions.contains(url.pathExtension) {
+                subpaths[url.pathExtension, default: []].append(url.relativePath)
+
+                if pruning.contains(url.pathExtension), url.isDirectoryResource {
+                    enumerator.skipDescendants()
+                }
+            }
+        }
+
+        return subpaths.mapValues { paths in
+            paths
+                .sorted()
+                .map { self + $0 }
+        }
+    }
+
     func containsDirectory(withExtension ext: String) -> Bool {
         // Normalize the target extension: remove leading dot(s) and lowercase
         let normalizedExt = ext.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
@@ -45,5 +98,12 @@ extension Path {
 
             return componentExt == normalizedExt
         }
+    }
+}
+
+private extension URL {
+    /// Reads the directory flag the enumerator prefetched; false when it cannot be read.
+    var isDirectoryResource: Bool {
+        (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
     }
 }

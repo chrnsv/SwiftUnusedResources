@@ -12,7 +12,7 @@ import Rainbow
 import SURCore
 
 struct SUR: AsyncParsableCommand {
-    static let version = "0.3.0"
+    static let version = "0.4.0"
 
     static let configuration = CommandConfiguration(
         commandName: "sur",
