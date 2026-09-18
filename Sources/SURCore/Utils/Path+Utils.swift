@@ -46,25 +46,28 @@ extension Path {
             subpaths[ext] = []
         }
 
-        guard let enumerator = FileManager.default.enumerator(atPath: string) else {
+        // The URL enumerator fetches directory flags in bulk; the path-based one stats every entry.
+        let enumerator = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: string, isDirectory: true),
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.producesRelativePathURLs]
+        )
+
+        guard let enumerator else {
             return subpaths.mapValues { _ in [] }
         }
 
-        while let subpath = enumerator.nextObject() as? String {
-            let name = NSString(string: subpath).lastPathComponent
+        while let url = enumerator.nextObject() as? URL {
+            let name = url.lastPathComponent
 
             if name.hasPrefix(".") {
                 // Called on a file, `skipDescendants()` skips the rest of its parent directory
-                if enumerator.fileAttributes?[.type] as? FileAttributeType == .typeDirectory {
+                if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
                     enumerator.skipDescendants()
                 }
             }
-            else {
-                let ext = NSString(string: name).pathExtension
-
-                if extensions.contains(ext) {
-                    subpaths[ext, default: []].append(subpath)
-                }
+            else if extensions.contains(url.pathExtension) {
+                subpaths[url.pathExtension, default: []].append(url.relativePath)
             }
         }
 
