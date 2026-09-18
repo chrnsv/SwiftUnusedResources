@@ -84,4 +84,56 @@ struct UnusedResourcesTests {
             try unusedResources(in: [image("star")], usages: [.regexp("(", .image)], excluding: [])
         }
     }
+
+    @Test("An invalid pattern still throws when every resource of its kind is matched exactly")
+    func invalidPatternWithMatchedResources() {
+        #expect(throws: (any Error).self) {
+            try unusedResources(
+                in: [image("star")],
+                usages: [.string("star", .image), .regexp("(", .image)],
+                excluding: []
+            )
+        }
+    }
+
+    @Test("An invalid pattern does not throw when no resource of its kind is checked")
+    func invalidPatternWithoutResourcesOfItsKind() throws {
+        let unused = try unusedResources(
+            in: [color("brand"), image("excluded")],
+            usages: [.regexp("(", .image)],
+            excluding: ["excluded"]
+        )
+        #expect(names(unused) == ["brand"])
+    }
+
+    @Test("A literal pattern matches only the exact name")
+    func literalPattern() throws {
+        let unused = try unusedResources(
+            in: [image("star"), image("stars"), image("Star")],
+            usages: [.regexp("star", .image)],
+            excluding: []
+        )
+        #expect(names(unused) == ["stars", "Star"])
+    }
+
+    @Test("A pattern with a metacharacter is a regexp, not a literal")
+    func metacharacterPattern() throws {
+        let unused = try unusedResources(
+            in: [image("star"), image("st.r"), image("stab")],
+            usages: [.regexp("st.r", .image)],
+            excluding: []
+        )
+        #expect(names(unused) == ["stab"])
+    }
+
+    @Test("A non-ASCII literal pattern matches exactly like a regexp would")
+    func nonASCIIPattern() throws {
+        // Precomposed "é" vs. "e" + combining acute: equal as Swift Strings, different for a regex.
+        let unused = try unusedResources(
+            in: [image("caf\u{E9}"), image("cafe\u{301}")],
+            usages: [.regexp("caf\u{E9}", .image)],
+            excluding: []
+        )
+        #expect(names(unused) == ["cafe\u{301}"])
+    }
 }

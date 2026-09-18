@@ -358,11 +358,10 @@ private extension Configuration.Kind {
 
 extension String {
     func withoutImageAndColor() -> String {
-        let input = self
-        let pattern = "(?i)(image|color)+$"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [])
-        let range = NSRange(location: 0, length: input.utf16.count)
-        let modifiedString = regex?.stringByReplacingMatches(in: input, options: [], range: range, withTemplate: "")
-        return modifiedString ?? input
+        let range = NSRange(location: 0, length: utf16.count)
+        return kImageAndColorSuffix.stringByReplacingMatches(in: self, options: [], range: range, withTemplate: "")
     }
 }
+
+// swiftlint:disable:next force_try
+private let kImageAndColorSuffix = try! NSRegularExpression(pattern: "(?i)(image|color)+$", options: [])
