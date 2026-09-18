@@ -73,6 +73,16 @@ struct DiscoveryTests {
         #expect(resources.first { $0.name == "brand" }?.kind == .color)
     }
 
+    @Test("No kinds, no resources — and no walk")
+    func noKinds() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("Assets.xcassets/star.imageset/Contents.json", "{}")
+
+        #expect(assetResources(in: tmp.path + "Assets.xcassets", kinds: [], excludedAssets: []).isEmpty)
+    }
+
     @Test("An excluded catalog yields nothing")
     func excludedCatalog() throws {
         let tmp = try TemporaryDirectory()

@@ -47,6 +47,11 @@ package func assetResources(
 
     // allCases, not the set, so the resource (and output) order is the same on every run.
     let orderedKinds = ExploreKind.allCases.filter(kinds.contains)
+
+    guard !orderedKinds.isEmpty else {
+        return []
+    }
+
     let assetExtensions = Set(orderedKinds.map(\.assetExtension))
     // Sets never nest, so their contents are not walked.
     let found = catalog.descendants(withExtensions: assetExtensions, pruning: assetExtensions)

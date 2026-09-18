@@ -13,7 +13,9 @@ struct Workload {
     let catalogs: [Path]
     let swiftFiles: [URL]
     let xibs: [Path]
-    /// Collected by a quiet `Explorer` run; with several targets this is the last one processed.
+    /// Collected by a quiet `Explorer` run, so — unlike the raw path lists above — they honor
+    /// the project's `sur.yml` (excluded assets/sources, kinds). With several targets this is
+    /// the last one processed.
     let resources: [ExploreResource]
     let usages: [ExploreUsage]
 }

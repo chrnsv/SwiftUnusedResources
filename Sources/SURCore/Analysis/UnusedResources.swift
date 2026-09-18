@@ -22,7 +22,7 @@ package func unusedResources(
             continue
         }
 
-        if try indexes[resource.kind, default: UsageIndex()].matches(resource, updating: &indexes) {
+        if try indexes[resource.kind, default: UsageIndex()].matches(resource) {
             continue
         }
 
@@ -71,9 +71,8 @@ private struct UsageIndex {
     var patterns: [String] = []
     var regexes: [NSRegularExpression]?
 
-    /// Whether any usage refers to `resource`. Compiles this kind's patterns on the first call
-    /// and stores them back through `indexes`.
-    func matches(_ resource: ExploreResource, updating indexes: inout [ExploreKind: Self]) throws -> Bool {
+    /// Whether any usage refers to `resource`. Compiles this kind's patterns on the first call.
+    mutating func matches(_ resource: ExploreResource) throws -> Bool {
         let regexes: [NSRegularExpression]
 
         if let compiled = self.regexes {
@@ -81,7 +80,7 @@ private struct UsageIndex {
         }
         else {
             regexes = try patterns.map { try NSRegularExpression(pattern: "^\($0)$") }
-            indexes[resource.kind]?.regexes = regexes
+            self.regexes = regexes
         }
 
         if names.contains(resource.name) || literals.contains(resource.name) {
