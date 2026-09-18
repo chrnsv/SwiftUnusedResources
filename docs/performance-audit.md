@@ -1,6 +1,6 @@
 # Performance audit — 2026-09-18, measured at revision 481667f
 
-## Results (F1–F4 and F6 applied, revision 8b0fda9)
+## Results (F1–F4, F6 and pruning applied)
 
 Measured with the same harness against the baseline JSON (`--compare`), medians:
 
@@ -21,9 +21,16 @@ Behavior check: the full `sur` output on the production app (all targets) is lin
 identical before and after, up to the order of targets, which comes from `XcodeProj` and was
 never stable; the synthetic oracle test (which does contain unused assets) passes unchanged.
 
-What is left on the production app (≈ 340 ms): discovery ≈ 65 %, Swift parsing ≈ 25 %,
-xibs ≈ 8 %. The next step would be pruning the walk (not descending into matched
-`*.imageset` / `*.colorset` and into `*.icon`), which needs the tests listed under F3 first.
+**Pruning (F3 follow-up, revision after 8b0fda9):** the walk no longer descends into `*.xcassets`
+(group discovery) or into `*.imageset` / `*.colorset` (catalog expansion). On the production
+app fs.discovery 230 → 122 ms, e2e 344 → **240 ms**; on medium e2e 279 → 131 ms. This is a
+deliberate behavior change matching Xcode's semantics — a catalog in a synchronized group is one
+resource, so a `.swift` file or a nested catalog inside it is not discovered, and a set inside a
+set is not a resource — pinned by tests. Output on the production app is unchanged.
+
+What is left on the production app (≈ 240 ms): discovery ≈ 50 %, Swift parsing ≈ 35 %,
+xibs ≈ 10 %. The remaining candidates are a parallel directory walk (I/O-bound, expected
+−25…−35 % of the run, needs an A/B) and nothing else above the noise floor.
 
 ## Summary
 
