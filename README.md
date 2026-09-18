@@ -1,6 +1,6 @@
 # SUR
 
-`sur` is commandline tool that helps you to keep image resources of Xcode project on track.
+`sur` is a command-line tool that finds unused images and colors in an Xcode project: asset catalog contents as well as standalone image files (`png`, `jpg`, `pdf`, `gif`, `svg`).
 
 ## Installation
 
@@ -10,61 +10,74 @@
 mint install mugabe/SwiftUnusedResources
 ```
 
+### Using [mise](https://mise.jdx.dev)
+
+```shell
+# install globally
+mise use -g github:mugabe/SwiftUnusedResources
+
+# or add it to the current project
+mise use github:mugabe/SwiftUnusedResources
+```
+
+Alternatively, add it to your project's `mise.toml` by hand and run `mise install`:
+
+```toml
+[tools]
+"github:mugabe/SwiftUnusedResources" = "latest"
+```
+
+Replace `latest` with a release tag to pin a specific version.
+
+mise downloads the prebuilt binary from GitHub releases, so no Swift toolchain is needed.
+The binary is built for Apple silicon only.
+
 ### Compile from source
 
-```bash
-> git clone https://github.com/mugabe/SwiftUnusedResources.git
-> cd SwiftUnusedResources
-> swift build -c release
-> cp .build/release/sur /usr/local/bin/sur
+```shell
+git clone https://github.com/mugabe/SwiftUnusedResources.git
+cd SwiftUnusedResources
+swift build -c release
+cp .build/release/sur /usr/local/bin/sur
 ```
-
-### Cocoapods
-
-```ruby
-pod 'SwiftUnusedResources'
-```
-
-`sur` will be installed at `${PODS_ROOT}/SwiftUnusedResources/sur`
 
 ### Xcode Package Dependency
 
-Use the following link to add SwiftLint as a Package Dependency to an Xcode
-project:
+Add SwiftUnusedResources as a Package Dependency to your Xcode project using the following link:
 
-```bash
-git@github.com:mugabe/SwiftUnusedResources.git
+```
+https://github.com/mugabe/SwiftUnusedResources.git
 ```
 
 ## Usage
 
-Just type `sur` under your project's path
+Run `sur` in the directory that contains your `.xcodeproj`:
 
 ```shell
-> sur
+sur
 ```
 
-or
+or point it at a project and a target explicitly:
+
+```shell
+sur --project path/to/App.xcodeproj --target App
+```
+
+| Option | Description |
+| --- | --- |
+| `-p`, `--project` | Path to the `.xcodeproj`. Defaults to the one in the current directory. |
+| `-t`, `--target` | Target to check. All targets are checked when omitted. |
+| `-v`, `--version` | Show the version. |
 
 ## Xcode integration
 
-### Cocoapods installation
+Add the `SURBuildToolPlugin` to the `Run Build Tool Plug-ins` phase of the `Build Phases` of each target.
 
-Add a `Run Script` phase to each target.
-
-```shell
-"${PODS_ROOT}/SwiftUnusedResources/sur"
-```
-
-### SPM installation
-
-Add the `SURBuildToolPlugin` to the `Run Build Tool Plug-ins` phase of the `Build Phases` for the each target.
-
-On every project build `sur` will throw warnings about unused images.
+On every project build `sur` will emit warnings about unused images and colors.
 
 ### When running on CI
 
-Add a script with the content: 
+Xcode asks to trust package plugins interactively, so disable the validation on CI:
 
 ```shell
 defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -bool YES
@@ -72,50 +85,72 @@ defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -b
 
 ## How it works
 
-`sur` finds images and colors included in the target, and then detects if they are used by the xibs, storyboards, and swift files.
-`sur` will search for `UIImage(named: <image>)` (in UIKit and WatchKit files), `Image(<image>)` (in SwiftUI files), `#imageLiteral(<image>)`, `R.image.<image>()`, and will try to guess best pattern to match images even with partial names. It also supports generated assets such as `Image(.<image>)` and `Image.<image>` but currently does not support the `.<image>` declaration.
+`sur` finds the images and colors included in the target, and then detects whether they are used by xibs, storyboards, and Swift files.
+
+In Swift files `sur` looks for:
+
+- `UIImage(named: <image>)` and `UIColor(named: <color>)` (UIKit and WatchKit), `Image(<image>)` and `Color(<color>)` (SwiftUI);
+- `#imageLiteral(<image>)`;
+- `R.image.<image>()` and `R.color.<color>()`;
+- generated asset symbols: `Image(.<image>)`, `ImageResource.<image>`, `UIColor.<color>` and so on. A bare `.<image>` is resolved
+  where the type is known: type-annotated bindings, return values of functions and computed properties, and arguments of the
+  known SwiftUI modifiers, UIKit setters and properties (see [Custom symbols](#custom-symbols)).
+
+When a name is built dynamically, `sur` tries to guess the best pattern to match resources even with partial names:
 
 ```swift
 // Any part of the name that sur couldn't guess will be replaced with `*`.
 
-UIImage(named: "icon" + size) 
-// all icon* resources whould be marked as used
+UIImage(named: "icon" + size)
+// all icon* resources would be marked as used
 
 Image("some\(value)image")
 // all some*image resources would be marked
 
-
-// Ternary operators should work well
+// Ternary operators work well
 
 Image("button" + (enabled ? "Normal" : "Gray"))
 // only buttonNormal and buttonGray would be marked
 ```
 
-However, if no strings were used in image creation `sur` will fail with guess.
-In this case (as in case if guessed pattern too wide) you can specify regexp pattern on your own by doc comment.
+However, if no string literals are involved, `sur` can't guess the name and emits a warning.
+In this case (or if the guessed pattern is too wide) you can specify a regexp pattern yourself with an `image:` or `color:` comment:
 
 ```swift
 // image: icon(Small|Large)
-UIImage(named: "icon" + someting())
+UIImage(named: "icon" + something())
 
 // image: frame\d+
 Image("frame\(count)")
 
 // image: (apple|banana|whiskey)
 Image(image)
+
+// color: accent(Light|Dark)
+Color(colorName)
+```
+
+To just silence the warning without marking anything as used, add a `sur: skip` comment:
+
+```swift
+// sur: skip
+Image(name)
 ```
 
 ## Configuration
 
-You can place `sur.yml` to the root of your project to configure your rules. Example configuration:
+Place a `sur.yml` in the root of your project to configure the tool. Example configuration:
 
 ```yaml
+kinds:          # resource kinds to check; both are checked by default
+  - image
+  - color
 exclude:
-  sources:
+  sources:      # Swift files that should not be parsed, relative to the project root
     - <path to the source file>
-  resources:
+  resources:    # resources that should never be reported
     - <name of resource>
-  assets:
+  assets:       # asset catalogs that should be ignored entirely
     - <name of xcassets>
 ```
 
@@ -141,6 +176,21 @@ symbols:
 
 Only unlabeled arguments and arguments labeled `color:` of listed calls are collected, so
 control labels (`for:`, `alignment:`, …) are never mistaken for assets.
+
+## Migrating from R.swift
+
+`sur r-to-xcode` rewrites R.swift usages to the symbols Xcode generates for string catalogs and asset catalogs:
+
+```shell
+# preview the changes without touching any files
+sur r-to-xcode path/to/App.xcodeproj --target App --dry-run
+
+# rewrite only assets (or only strings with --strings); both are rewritten by default
+sur r-to-xcode path/to/App.xcodeproj --assets --exclude Sources/Generated/R.generated.swift
+```
+
+`--exclude` paths are absolute or relative to the source root (the directory containing the `.xcodeproj`, unless `--source-root` is given).
+Run `sur r-to-xcode --help` for the full list of options.
 
 ## Benchmarks
 
