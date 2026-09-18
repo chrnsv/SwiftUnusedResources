@@ -1,22 +1,29 @@
 # Performance audit — 2026-09-18, measured at revision 481667f
 
-## Results (F1–F3 applied, revision 9bfc500)
+## Results (F1–F4 and F6 applied, revision 8b0fda9)
 
 Measured with the same harness against the baseline JSON (`--compare`), medians:
 
-| benchmark | medium before | medium after | production app before | production app after |
+| benchmark | production app before | after | medium before | after |
 |---|---|---|---|---|
-| analyze | 25 396.5 ms | 3.9 ms | 3 542.0 ms | 2.7 ms |
-| fs.discovery | 1 337.2 ms | 280.6 ms | 1 782.8 ms | 328.3 ms |
-| e2e | 26 559.8 ms | 376.0 ms | 5 333.9 ms | 451.0 ms |
+| analyze | 3 542.0 ms | 2.7 ms | 25 396.5 ms | 3.9 ms |
+| fs.discovery | 1 782.8 ms | 230.4 ms | 1 337.2 ms | 196.5 ms |
+| swift.parse.parallel | 107.6 ms | 83.2 ms | 35.3 ms | 25.5 ms |
+| e2e | 5 333.9 ms | 344.2 ms | 26 559.8 ms | 279.3 ms |
 
-e2e: **×70 on medium, ×11.8 on the production app.** Every other phase moved within noise.
+e2e on the production app: **5.33 s → 0.34 s (×15.5)**. Per fix, on the production app:
+F1+F2 analyze 3 542 → 2.7 ms (e2e −64 %); F3 discovery 1 783 → 328 ms (e2e 1.89 → 0.45 s);
+F4 discovery 328 → 221 ms (−33 %); F6 parse.serial 681 → 556 ms (−18 %).
+**F5 (concurrent xib parsing) was tried and rejected:** A/B over 15 e2e runs gave 352 → 336 ms,
+a 4.7 % gain below the 5 % noise threshold, for extra state in `Explorer`.
+
 Behavior check: the full `sur` output on the production app (all targets) is line-for-line
 identical before and after, up to the order of targets, which comes from `XcodeProj` and was
 never stable; the synthetic oracle test (which does contain unused assets) passes unchanged.
 
-After the change the production app run splits roughly into discovery 73 %, Swift parsing
-22 %, xibs 5 % — F4–F6 are now the candidates, in that order.
+What is left on the production app (≈ 340 ms): discovery ≈ 65 %, Swift parsing ≈ 25 %,
+xibs ≈ 8 %. The next step would be pruning the walk (not descending into matched
+`*.imageset` / `*.colorset` and into `*.icon`), which needs the tests listed under F3 first.
 
 ## Summary
 
