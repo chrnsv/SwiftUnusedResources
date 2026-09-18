@@ -1,5 +1,23 @@
 # Performance audit — 2026-09-18, measured at revision 481667f
 
+## Results (F1–F3 applied, revision 9bfc500)
+
+Measured with the same harness against the baseline JSON (`--compare`), medians:
+
+| benchmark | medium before | medium after | production app before | production app after |
+|---|---|---|---|---|
+| analyze | 25 396.5 ms | 3.9 ms | 3 542.0 ms | 2.7 ms |
+| fs.discovery | 1 337.2 ms | 280.6 ms | 1 782.8 ms | 328.3 ms |
+| e2e | 26 559.8 ms | 376.0 ms | 5 333.9 ms | 451.0 ms |
+
+e2e: **×70 on medium, ×11.8 on the production app.** Every other phase moved within noise.
+Behavior check: the full `sur` output on the production app (all targets) is line-for-line
+identical before and after, up to the order of targets, which comes from `XcodeProj` and was
+never stable; the synthetic oracle test (which does contain unused assets) passes unchanged.
+
+After the change the production app run splits roughly into discovery 73 %, Swift parsing
+22 %, xibs 5 % — F4–F6 are now the candidates, in that order.
+
 ## Summary
 
 Two functions account for ~98 % of the run time of `sur` on every workload measured:
