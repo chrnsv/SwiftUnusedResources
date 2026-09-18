@@ -29,6 +29,8 @@ mkdir -p "$BUNDLE_DIR/bin"
 # Copy executable
 cp "$EXECUTABLE_PATH" "$BUNDLE_DIR/bin/sur"
 
+strip -rSTx "$BUNDLE_DIR/bin/sur"
+
 # Create info.json
 cat <<EOF > "$BUNDLE_DIR/info.json"
 {
