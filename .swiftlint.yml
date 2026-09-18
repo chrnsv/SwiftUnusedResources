@@ -194,6 +194,10 @@ line_length:
   ignores_urls: true
   ignores_comments: true
 
+file_name:
+  excluded:
+    - UnusedResources.swift # holds the free function `unusedResources`, not a type
+
 redundant_void_return:
   include_closures: false
 

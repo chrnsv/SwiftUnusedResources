@@ -57,6 +57,29 @@ let package = Package(
                  .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
             ]
         ),
+        .target(
+            name: "SURBenchmarkSupport",
+            dependencies: [
+                .product(name: "PathKit", package: "PathKit"),
+                .product(name: "XcodeProj", package: "XcodeProj"),
+            ],
+            plugins: skipSwiftLint ? [] : [
+                 .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
+            ]
+        ),
+        .executableTarget(
+            name: "SURBenchmarks",
+            dependencies: [
+                .target(name: "SURCore"),
+                .target(name: "SURBenchmarkSupport"),
+                .product(name: "PathKit", package: "PathKit"),
+                .product(name: "XcodeProj", package: "XcodeProj"),
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            plugins: skipSwiftLint ? [] : [
+                 .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
+            ]
+        ),
         .binaryTarget(
             name: "SURBinary",
             url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/0.3.2/sur-0.3.2.artifactbundle.zip",
@@ -74,6 +97,14 @@ let package = Package(
             ],
             plugins: skipSwiftLint ? [] : [
                  .plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
+            ]
+        ),
+        .testTarget(
+            name: "SURBenchmarkSupportTests",
+            dependencies: [
+                .target(name: "SURBenchmarkSupport"),
+                .target(name: "SURCore"),
+                .product(name: "PathKit", package: "PathKit"),
             ]
         ),
     ]

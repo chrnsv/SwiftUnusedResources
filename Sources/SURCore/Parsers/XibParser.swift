@@ -1,8 +1,10 @@
 import Foundation
 import PathKit
 
-struct XibParser: Sendable {
-    func parse(
+package struct XibParser: Sendable {
+    package init() {}
+
+    package func parse(
         _ path: Path
     ) throws -> [ExploreUsage] {
         guard path.extension == "xib" || path.extension == "storyboard" else {
