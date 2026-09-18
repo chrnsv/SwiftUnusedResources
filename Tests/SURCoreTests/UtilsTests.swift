@@ -198,6 +198,36 @@ struct UtilsTests {
         #expect(buckets["imageset"] == nil)
     }
 
+    @Test("A pruned extension lists the matched directory but not its contents")
+    func descendantsPruning() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("Assets.xcassets/Icon.imageset/icon.png", "")
+        try tmp.write("Assets.xcassets/Nested.xcassets/Contents.json", "{}")
+        try tmp.write("Images/logo.png", "")
+
+        let buckets = tmp.path.descendants(withExtensions: ["xcassets", "png"], pruning: ["xcassets"])
+
+        #expect(buckets["xcassets"] == [tmp.path + "Assets.xcassets"])
+        #expect(buckets["png"] == [tmp.path + "Images/logo.png"])
+    }
+
+    @Test("A pruned extension on a file does not hide its siblings")
+    func descendantsPruningFile() throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+
+        try tmp.write("dir/a.xcassets", "not a directory")
+        try tmp.write("dir/b.png", "")
+        try tmp.write("dir/nested/c.png", "")
+
+        let buckets = tmp.path.descendants(withExtensions: ["xcassets", "png"], pruning: ["xcassets"])
+
+        #expect(buckets["xcassets"] == [tmp.path + "dir/a.xcassets"])
+        #expect(buckets["png"] == [tmp.path + "dir/b.png", tmp.path + "dir/nested/c.png"])
+    }
+
     @Test("Does not match the receiver itself")
     func descendantsExcludesReceiver() throws {
         let tmp = try TemporaryDirectory()

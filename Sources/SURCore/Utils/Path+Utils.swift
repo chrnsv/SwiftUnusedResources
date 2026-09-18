@@ -39,7 +39,8 @@ extension Path {
 
     /// Same as `descendants(withExtension:)` for several extensions in a single walk of the
     /// tree. Every requested extension has an entry (possibly empty); each entry is sorted.
-    func descendants(withExtensions extensions: Set<String>) -> [String: [Path]] {
+    /// A matched directory whose extension is in `pruning` is listed but not descended into.
+    func descendants(withExtensions extensions: Set<String>, pruning: Set<String> = []) -> [String: [Path]] {
         var subpaths: [String: [String]] = [:]
 
         for ext in extensions {
@@ -62,12 +63,16 @@ extension Path {
 
             if name.hasPrefix(".") {
                 // Called on a file, `skipDescendants()` skips the rest of its parent directory
-                if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                if url.isDirectoryResource {
                     enumerator.skipDescendants()
                 }
             }
             else if extensions.contains(url.pathExtension) {
                 subpaths[url.pathExtension, default: []].append(url.relativePath)
+
+                if pruning.contains(url.pathExtension), url.isDirectoryResource {
+                    enumerator.skipDescendants()
+                }
             }
         }
 
@@ -93,5 +98,12 @@ extension Path {
 
             return componentExt == normalizedExt
         }
+    }
+}
+
+private extension URL {
+    /// Reads the directory flag the enumerator prefetched; false when it cannot be read.
+    var isDirectoryResource: Bool {
+        (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
     }
 }

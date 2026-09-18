@@ -10,7 +10,8 @@ package struct DiscoveredFiles: Equatable {
 /// Reads the file system, but has no side effects and depends on nothing but `root`.
 package func discoverFiles(inSynchronizedGroup root: Path) -> DiscoveredFiles {
     let extensions = ["png", "jpg", "pdf", "gif", "svg", "xcassets", "xib", "storyboard"]
-    let found = root.descendants(withExtensions: Set(extensions + ["swift"]))
+    // A catalog is one resource; nothing inside it is a source or a resource of its own.
+    let found = root.descendants(withExtensions: Set(extensions + ["swift"]), pruning: ["xcassets"])
 
     var resources: [Path] = []
 
@@ -46,7 +47,9 @@ package func assetResources(
 
     // allCases, not the set, so the resource (and output) order is the same on every run.
     let orderedKinds = ExploreKind.allCases.filter(kinds.contains)
-    let found = catalog.descendants(withExtensions: Set(orderedKinds.map(\.assetExtension)))
+    let assetExtensions = Set(orderedKinds.map(\.assetExtension))
+    // Sets never nest, so their contents are not walked.
+    let found = catalog.descendants(withExtensions: assetExtensions, pruning: assetExtensions)
 
     return orderedKinds.flatMap { kind in
         (found[kind.assetExtension] ?? [])
