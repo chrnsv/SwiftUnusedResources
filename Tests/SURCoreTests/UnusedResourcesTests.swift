@@ -46,6 +46,16 @@ struct UnusedResourcesTests {
         #expect(names(unused) == ["icon-away"])
     }
 
+    @Test("R.swift usage keeps underscores in the identifier")
+    func rswiftUsageOfSnakeCaseName() throws {
+        let unused = try unusedResources(
+            in: [image("icon_name"), image("iconName")],
+            usages: [.rswift("icon_name", .image)],
+            excluding: []
+        )
+        #expect(names(unused) == ["iconName"])
+    }
+
     @Test("Generated usage ignores a trailing Image/Color suffix of the resource name")
     func generatedUsage() throws {
         let unused = try unusedResources(
@@ -54,6 +64,16 @@ struct UnusedResourcesTests {
             excluding: []
         )
         #expect(names(unused) == ["accentColor"])
+    }
+
+    @Test("Generated usage matches a snake_case resource by its camel-cased Xcode symbol")
+    func generatedUsageOfSnakeCaseName() throws {
+        let unused = try unusedResources(
+            in: [image("mascot_bear_review_avatar"), image("bear_shy"), image("lion_shy")],
+            usages: [.generated("mascotBearReviewAvatar", .image), .generated("bearShy", .image)],
+            excluding: []
+        )
+        #expect(names(unused) == ["lion_shy"])
     }
 
     @Test("A usage of another kind does not count")

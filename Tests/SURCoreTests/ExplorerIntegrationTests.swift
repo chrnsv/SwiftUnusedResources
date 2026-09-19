@@ -76,6 +76,45 @@ struct ExplorerIntegrationTests {
         #expect(unused.isEmpty)
     }
 
+    @Test("Does not report snake_case images used via their camel-cased generated symbols")
+    func snakeCaseImagesUsedViaGeneratedSymbols() async throws {
+        let fixture = try FixtureProject()
+        defer { fixture.remove() }
+
+        try fixture.addAssetCatalog("Assets.xcassets", imageSets: [
+            "mascot_bear_review_avatar",
+            "bear_shy",
+            "kegel_progress_finished",
+            "kegel_progress_unfinished",
+            "lion_shy",
+        ])
+        try fixture.addSource("Main.swift", """
+        import SwiftUI
+
+        let avatar = Image(.mascotBearReviewAvatar)
+
+        func mascot(isShy: Bool) -> ImageResource {
+            switch isShy {
+            case true:
+                .bearShy
+
+            case false:
+                .mascotBearReviewAvatar
+            }
+        }
+
+        var bannerImage: ImageResource {
+            isRestDay ? .kegelProgressFinished : .kegelProgressUnfinished
+        }
+        """)
+        try fixture.write(targets: [
+            .init(name: "App", sources: ["Main.swift"], resources: ["Assets.xcassets"]),
+        ])
+
+        let unused = try await unusedNames(in: fixture, target: "App")
+        #expect(unused == ["lion_shy"])
+    }
+
     @Test("Honors exclude.resources from sur.yml")
     func excludedResourceNotReported() async throws {
         let fixture = try FixtureProject()

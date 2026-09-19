@@ -83,7 +83,13 @@ struct SwiftIdentifier : CustomStringConvertible, Hashable {
   init(rawValue: String) {
     description = rawValue
   }
-    
+
+  /// The identifier Xcode generates for an asset catalog symbol (`ImageResource.name`, `ColorResource.name`).
+  /// Unlike R.swift, Xcode also treats `_` as a word separator: `bear_shy` becomes `bearShy`.
+  init(assetName: String) {
+    self.init(name: assetName.replacingOccurrences(of: "_", with: " "))
+  }
+
     
 
   private static func lowercasePrefix(_ name: String) -> String {

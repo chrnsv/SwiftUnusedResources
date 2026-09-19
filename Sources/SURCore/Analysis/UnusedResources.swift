@@ -94,8 +94,18 @@ private struct UsageIndex {
         if !rswift.isEmpty || !generated.isEmpty {
             let identifier = SwiftIdentifier(name: resource.name).description
 
-            if rswift.contains(identifier) || generated.contains(identifier.withoutImageAndColor()) {
+            if rswift.contains(identifier) {
                 return true
+            }
+
+            if !generated.isEmpty {
+                // Xcode also splits words at `_`; without one the asset symbol equals the R.swift identifier.
+                let hasUnderscore = resource.name.utf8.contains(UInt8(ascii: "_"))
+                let symbol = hasUnderscore ? SwiftIdentifier(assetName: resource.name).description : identifier
+
+                if generated.contains(symbol.withoutImageAndColor()) {
+                    return true
+                }
             }
         }
 
