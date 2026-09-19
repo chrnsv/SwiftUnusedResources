@@ -116,7 +116,7 @@ private extension RToGeneratedAssetsRewriter {
             // Standalone member uses: R.<kind>.<id> -> <ResourceType>Resource.<id>
             if let (kind, identifier) = matchRKindIdentifier(from: node) {
                 // Create replacement expression: <ResourceType>Resource.<id>
-                return .parse(kind.resource(with: identifier.withoutImageAndColor()))
+                return .parse(kind.resource(with: generatedSymbol(for: identifier)))
                     .with(\.leadingTrivia, node.leadingTrivia)
                     .with(\.trailingTrivia, node.trailingTrivia)
             }
@@ -180,8 +180,14 @@ private extension RToGeneratedAssetsRewriter.Rewriter {
     /// Creates an expression for module.
     private func expr(for kind: Kind, with identifier: String, from module: Module) -> ExprSyntax {
         changedModules.insert(module)
-        let resource = kind.resource(for: module, with: identifier.withoutImageAndColor())
+        let resource = kind.resource(for: module, with: generatedSymbol(for: identifier))
         return .parse(resource)
+    }
+
+    /// The symbol Xcode generates for the asset behind an R.swift identifier:
+    /// R.swift keeps `_` in `bear_shy`, Xcode camel-cases it to `bearShy`.
+    private func generatedSymbol(for identifier: String) -> String {
+        SwiftIdentifier(assetName: identifier).description.withoutImageAndColor()
     }
 }
 
