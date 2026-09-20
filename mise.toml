@@ -2,143 +2,210 @@
 description = "Build release binary"
 run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64 --product sur"
 
-[tasks.artifactbundle]
-description = "Create artifact bundle"
-depends = ["build"]
+[tasks.linux-build]
+description = "Build the Linux binary in a container (Apple `container` CLI)"
 run = '''
 #!/usr/bin/env bash
 set -e
 
-VERSION=$1
-if [ -z "$VERSION" ]; then
-  echo "Error: Version argument is required. Usage: mise run artifactbundle <version>"
-  exit 1
+# swift-syntax needs real memory: the 1 GB default makes the VM swap for minutes.
+container run --rm \
+  --cpus 8 --memory 8g \
+  --volume "$PWD:/workspace" --workdir /workspace \
+  --env SKIP_SWIFTLINT=1 \
+  swift:6.3-noble \
+  swift build -c release --product sur --scratch-path .build-linux
+'''
+
+[tasks.linux-test]
+description = "Run the test suite on Linux in a container (Apple `container` CLI)"
+run = '''
+#!/usr/bin/env bash
+set -e
+
+container run --rm \
+  --cpus 8 --memory 8g \
+  --volume "$PWD:/workspace" --workdir /workspace \
+  --env SKIP_SWIFTLINT=1 \
+  swift:6.3-noble \
+  bash -c 'swift build --build-tests --scratch-path .build-linux && swift test --skip-build --scratch-path .build-linux'
+'''
+
+[tasks.set-version]
+description = "Write <version> into the version constant in SUR.swift"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=${1:?Usage: mise run set-version <version>}
+
+# GNU and BSD sed disagree about -i, so edit through a temp file instead.
+edit() {
+  sed -E "$2" "$1" > "$1.tmp"
+  mv "$1.tmp" "$1"
+}
+
+# Only the version constant: the binaryTarget in Package.swift keeps pointing at
+# the previous release until `publish` rewrites it. Repointing it here would make
+# `swift build` fail, because SwiftPM downloads binary artifacts while resolving
+# and the new release does not exist yet.
+edit Sources/SUR/SUR.swift "s/(static let version = \")[^\"]+(\")/\1$VERSION\2/"
+
+echo "Version set to $VERSION"
+'''
+
+[tasks.stage-binary]
+description = "Build the release binary for the host platform and stage it under .release/"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The slot name doubles as the artifact-bundle directory and picks the triple.
+case "$(uname -s)" in
+  Darwin) SLOT="macos-arm64"; ARCH_ARGS=(--arch arm64) ;;
+  Linux)  SLOT="linux-$(uname -m)"; ARCH_ARGS=() ;;
+  *) echo "Unsupported host: $(uname -s)" >&2; exit 1 ;;
+esac
+
+export SKIP_SWIFTLINT=1
+swift build -c release "${ARCH_ARGS[@]}" --product sur
+
+BIN="$(swift build -c release "${ARCH_ARGS[@]}" --show-bin-path)/sur"
+mkdir -p ".release/$SLOT"
+cp "$BIN" ".release/$SLOT/sur"
+
+# BSD strip and GNU strip take different flags.
+if [ "$(uname -s)" = "Darwin" ]; then
+  strip -rSTx ".release/$SLOT/sur"
+else
+  strip ".release/$SLOT/sur"
 fi
 
-echo "Creating artifact bundle for SUR version $VERSION..."
+echo "Staged .release/$SLOT/sur"
+'''
 
-# Get executable path
-BIN_PATH=$(swift build -c release --arch arm64 --show-bin-path)
-EXECUTABLE_PATH="$BIN_PATH/sur"
+[tasks.artifactbundle]
+description = "Assemble the artifact bundle from every binary staged under .release/"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Define bundle paths
-BUNDLE_NAME="sur-$VERSION.artifactbundle"
-BUNDLE_DIR="${BUNDLE_NAME}_tmp"
-mkdir -p "$BUNDLE_DIR/bin"
+VERSION=${1:?Usage: mise run artifactbundle <version>}
 
-# Copy executable
-cp "$EXECUTABLE_PATH" "$BUNDLE_DIR/bin/sur"
+BUNDLE="sur-$VERSION.artifactbundle"
+rm -rf "$BUNDLE" "$BUNDLE.zip"
 
-strip -rSTx "$BUNDLE_DIR/bin/sur"
+for dir in .release/*/; do
+  [ -d "$dir" ] || { echo "Nothing staged in .release/ — run 'mise run stage-binary' first." >&2; exit 1; }
+  SLOT=$(basename "$dir")
+  [ -f "$dir/sur" ] || { echo "Missing $dir/sur" >&2; exit 1; }
+  mkdir -p "$BUNDLE/$SLOT/bin"
+  cp "$dir/sur" "$BUNDLE/$SLOT/bin/sur"
+  chmod +x "$BUNDLE/$SLOT/bin/sur"
+done
 
-# Create info.json
-cat <<EOF > "$BUNDLE_DIR/info.json"
-{
+# Build info.json with a real JSON writer: a malformed bundle is rejected by SwiftPM.
+VERSION="$VERSION" BUNDLE="$BUNDLE" python3 - <<'PY'
+import json, os, pathlib
+
+TRIPLES = {
+    "macos-arm64": "arm64-apple-macosx",
+    "linux-x86_64": "x86_64-unknown-linux-gnu",
+    "linux-aarch64": "aarch64-unknown-linux-gnu",
+}
+
+bundle = pathlib.Path(os.environ["BUNDLE"])
+slots = sorted(d.name for d in bundle.iterdir() if d.is_dir())
+
+unknown = [s for s in slots if s not in TRIPLES]
+if unknown:
+    raise SystemExit(f"Unknown slot(s): {', '.join(unknown)}")
+
+info = {
     "schemaVersion": "1.0",
     "artifacts": {
         "sur": {
-            "version": "$VERSION",
+            "version": os.environ["VERSION"],
             "type": "executable",
             "variants": [
-                {
-                    "path": "bin/sur",
-                    "supportedTriples": ["arm64-apple-macosx"]
-                }
-            ]
+                {"path": f"{slot}/bin/sur", "supportedTriples": [TRIPLES[slot]]}
+                for slot in slots
+            ],
         }
-    }
+    },
 }
-EOF
 
-# Compress the bundle
-BUNDLE_ZIP="$BUNDLE_NAME.zip"
-rm -f "$BUNDLE_ZIP"
-(cd "$BUNDLE_DIR" && zip -q -r "../$BUNDLE_ZIP" .)
+(bundle / "info.json").write_text(json.dumps(info, indent=4) + "\n")
+print("Variants: " + ", ".join(TRIPLES[s] for s in slots))
+PY
 
-# Clean up
-rm -rf "$BUNDLE_DIR"
+(cd "$BUNDLE" && zip -q -r "../$BUNDLE.zip" .)
+rm -rf "$BUNDLE"
 
-echo "Artifact bundle created: $BUNDLE_ZIP"
-'''
-
-[tasks.update-version]
-description = "Update version in Package.swift and SUR.swift"
-run = '''
-#!/usr/bin/env bash
-set -e
-VERSION=$1
-if [ -z "$VERSION" ]; then
-  echo "Error: Version argument is required. Usage: mise run update-version <version>"
-  exit 1
-fi
-
-# 1. Update Package.swift version in URL
-sed -i '' -E "s|(releases/download/)[^/]+/(sur-).+(\.artifactbundle\.zip)|\1$VERSION/\2$VERSION\3|" Package.swift
-
-# 2. Update version constant in SUR.swift
-sed -i '' -E "s/(static let version = \")[^\"]+(\")/\1$VERSION\2/" Sources/SUR/SUR.swift
-
-# 3. Update checksum (if zip exists)
-BUNDLE_ZIP="sur-$VERSION.artifactbundle.zip"
-if [ -f "$BUNDLE_ZIP" ]; then
-    echo "Found $BUNDLE_ZIP, updating checksum..."
-    CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
-    sed -i '' -E "s/(checksum:[[:space:]]*\")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
-    echo "Checksum updated: $CHECKSUM"
-fi
-
-echo "Successfully updated version to $VERSION"
+echo "Created $BUNDLE.zip"
 '''
 
 [tasks.publish]
-description = "Publish release to GitHub (upstream)"
+description = "Commit the release checksum, tag it and upload the bundle (runs on CI)"
 run = '''
 #!/usr/bin/env bash
-set -e
-VERSION=$1
-if [ -z "$VERSION" ]; then
-  echo "Error: Version argument is required. Usage: mise run publish <version>"
-  exit 1
-fi
+set -euo pipefail
 
+VERSION=${1:?Usage: mise run publish <version>}
 BUNDLE_ZIP="sur-$VERSION.artifactbundle.zip"
 
-if [ ! -f "$BUNDLE_ZIP" ]; then
-    echo "Error: $BUNDLE_ZIP not found. Run 'mise run artifactbundle $VERSION' first."
-    exit 1
+[ -f "$BUNDLE_ZIP" ] || { echo "Error: $BUNDLE_ZIP not found. Run 'mise run artifactbundle $VERSION' first." >&2; exit 1; }
+command -v gh >/dev/null || { echo "Error: GitHub CLI (gh) is not installed." >&2; exit 1; }
+
+REPO=${GITHUB_REPOSITORY:-$(git remote get-url origin | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')}
+
+# SwiftPM's compute-checksum is the SHA-256 of the archive, so a plain hash
+# works here and keeps this task free of a Swift toolchain.
+if command -v shasum >/dev/null; then
+  CHECKSUM=$(shasum -a 256 "$BUNDLE_ZIP" | cut -d' ' -f1)
+else
+  CHECKSUM=$(sha256sum "$BUNDLE_ZIP" | cut -d' ' -f1)
 fi
 
-if ! command -v gh &> /dev/null; then
-    echo "Error: GitHub CLI (gh) is not installed. Install with: brew install gh"
-    exit 1
-fi
-
-REMOTE="upstream"
-REPO=$(git remote get-url "$REMOTE" | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-# The asset download URL is deterministic — it is derived from the tag name and
-# the file name — so it can be written into Package.swift before the release
-# exists. No draft, no API round-trip, no second commit.
+# The asset URL is deterministic — tag name plus file name — so it can be
+# written into Package.swift before the release exists.
 ASSET_URL="https://github.com/$REPO/releases/download/$VERSION/$BUNDLE_ZIP"
-CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
 echo "Asset URL: $ASSET_URL"
 echo "Checksum:  $CHECKSUM"
 
-# Point the binaryTarget at the upcoming release asset. Only the binaryTarget
-# URL (a GitHub *releases* URL) is rewritten, never the .package(url:) deps.
-sed -i '' -E "s|url: \"https://[^\"]*releases[^\"]*\"|url: \"$ASSET_URL\"|" Package.swift
-sed -i '' -E "s/(checksum: \")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
-echo "Package.swift updated."
+edit() {
+  sed -E "$2" "$1" > "$1.tmp"
+  mv "$1.tmp" "$1"
+}
 
-# Commit and push so the release tag lands on the commit referencing the asset.
-git add Package.swift
-git commit -m "chore: update binaryTarget URL and checksum for $VERSION"
-git push "$REMOTE" "$BRANCH"
+# Only the binaryTarget URL (a GitHub *releases* URL) is rewritten, never the .package(url:) deps.
+edit Package.swift "s|url: \"https://[^\"]*releases[^\"]*\"|url: \"$ASSET_URL\"|"
+edit Package.swift "s/(checksum: \")[^\"]+(\")/\1$CHECKSUM\2/"
 
-# Create the release: gh tags this commit and uploads the artifact in one step.
-echo "Creating release $VERSION in $REPO..."
-gh release create "$VERSION" "$BUNDLE_ZIP" --repo "$REPO" --target "$(git rev-parse HEAD)" --title "$VERSION" --generate-notes
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+git add Package.swift Sources/SUR/SUR.swift
+git commit -m "chore: release $VERSION"
+git push origin "$BRANCH"
 
-echo "Release $VERSION published successfully."
+# gh tags this commit and uploads the artifact in one step.
+gh release create "$VERSION" "$BUNDLE_ZIP" \
+  --repo "$REPO" \
+  --target "$(git rev-parse HEAD)" \
+  --title "$VERSION" \
+  --generate-notes
+
+echo "Release $VERSION published."
+'''
+
+[tasks.release]
+description = "Trigger the release workflow on CI"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=${1:?Usage: mise run release <version>}
+command -v gh >/dev/null || { echo "Error: GitHub CLI (gh) is not installed." >&2; exit 1; }
+
+gh workflow run release.yml --field version="$VERSION"
+echo "Release workflow triggered for $VERSION. Follow it with: gh run watch"
 '''

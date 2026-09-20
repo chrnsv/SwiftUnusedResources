@@ -4,3 +4,5 @@
 .vscode
 *artifactbundle.zip
 .benchmarks
+.build-linux
+.release
