@@ -105,6 +105,9 @@ jobs:
       - name: Assemble artifact bundle
         run: mise run artifactbundle "${{ inputs.version }}"
 
+      - name: Package platform archives
+        run: mise run archives "${{ inputs.version }}"
+
       - name: Publish release
         run: |
           git config user.name "github-actions[bot]"

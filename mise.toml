@@ -14,7 +14,7 @@ container run --rm \
   --volume "$PWD:/workspace" --workdir /workspace \
   --env SKIP_SWIFTLINT=1 \
   swift:6.3-noble \
-  swift build -c release --product sur --scratch-path .build-linux
+  swift build -c release --static-swift-stdlib --product sur --scratch-path .build-linux
 '''
 
 [tasks.linux-test]
@@ -62,15 +62,18 @@ set -euo pipefail
 
 # The slot name doubles as the artifact-bundle directory and picks the triple.
 case "$(uname -s)" in
-  Darwin) SLOT="macos-arm64"; ARCH_ARGS=(--arch arm64) ;;
-  Linux)  SLOT="linux-$(uname -m)"; ARCH_ARGS=() ;;
+  # macOS ships the Swift runtime, so the binary can link against it.
+  Darwin) SLOT="macos-arm64"; BUILD_ARGS=(--arch arm64) ;;
+  # Linux does not: without --static-swift-stdlib the binary needs libswiftCore.so
+  # and friends at run time, which defeats shipping it to toolchain-less machines.
+  Linux)  SLOT="linux-$(uname -m)"; BUILD_ARGS=(--static-swift-stdlib) ;;
   *) echo "Unsupported host: $(uname -s)" >&2; exit 1 ;;
 esac
 
 export SKIP_SWIFTLINT=1
-swift build -c release "${ARCH_ARGS[@]}" --product sur
+swift build -c release "${BUILD_ARGS[@]}" --product sur
 
-BIN="$(swift build -c release "${ARCH_ARGS[@]}" --show-bin-path)/sur"
+BIN="$(swift build -c release "${BUILD_ARGS[@]}" --show-bin-path)/sur"
 mkdir -p ".release/$SLOT"
 cp "$BIN" ".release/$SLOT/sur"
 
@@ -85,59 +88,43 @@ echo "Staged .release/$SLOT/sur"
 '''
 
 [tasks.artifactbundle]
-description = "Assemble the artifact bundle from every binary staged under .release/"
+description = "Assemble the macOS artifact bundle from .release/macos-arm64"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
 VERSION=${1:?Usage: mise run artifactbundle <version>}
 
+# macOS only: the bundle exists for the SwiftPM binaryTarget behind
+# SURBuildToolPlugin, and that plugin only ever runs from Xcode. Linux binaries
+# ship as separate release archives instead of inflating every plugin download.
+SRC=".release/macos-arm64/sur"
+[ -f "$SRC" ] || { echo "Missing $SRC — run 'mise run stage-binary' on macOS first." >&2; exit 1; }
+
 BUNDLE="sur-$VERSION.artifactbundle"
 rm -rf "$BUNDLE" "$BUNDLE.zip"
 
-for dir in .release/*/; do
-  [ -d "$dir" ] || { echo "Nothing staged in .release/ — run 'mise run stage-binary' first." >&2; exit 1; }
-  SLOT=$(basename "$dir")
-  [ -f "$dir/sur" ] || { echo "Missing $dir/sur" >&2; exit 1; }
-  mkdir -p "$BUNDLE/$SLOT/bin"
-  cp "$dir/sur" "$BUNDLE/$SLOT/bin/sur"
-  chmod +x "$BUNDLE/$SLOT/bin/sur"
-done
+mkdir -p "$BUNDLE/bin"
+cp "$SRC" "$BUNDLE/bin/sur"
+chmod +x "$BUNDLE/bin/sur"
 
-# Build info.json with a real JSON writer: a malformed bundle is rejected by SwiftPM.
-VERSION="$VERSION" BUNDLE="$BUNDLE" python3 - <<'PY'
-import json, os, pathlib
-
-TRIPLES = {
-    "macos-arm64": "arm64-apple-macosx",
-    "linux-x86_64": "x86_64-unknown-linux-gnu",
-    "linux-aarch64": "aarch64-unknown-linux-gnu",
-}
-
-bundle = pathlib.Path(os.environ["BUNDLE"])
-slots = sorted(d.name for d in bundle.iterdir() if d.is_dir())
-
-unknown = [s for s in slots if s not in TRIPLES]
-if unknown:
-    raise SystemExit(f"Unknown slot(s): {', '.join(unknown)}")
-
-info = {
+cat > "$BUNDLE/info.json" <<EOF
+{
     "schemaVersion": "1.0",
     "artifacts": {
         "sur": {
-            "version": os.environ["VERSION"],
+            "version": "$VERSION",
             "type": "executable",
             "variants": [
-                {"path": f"{slot}/bin/sur", "supportedTriples": [TRIPLES[slot]]}
-                for slot in slots
-            ],
+                {
+                    "path": "bin/sur",
+                    "supportedTriples": ["arm64-apple-macosx"]
+                }
+            ]
         }
-    },
+    }
 }
-
-(bundle / "info.json").write_text(json.dumps(info, indent=4) + "\n")
-print("Variants: " + ", ".join(TRIPLES[s] for s in slots))
-PY
+EOF
 
 (cd "$BUNDLE" && zip -q -r "../$BUNDLE.zip" .)
 rm -rf "$BUNDLE"
@@ -145,8 +132,47 @@ rm -rf "$BUNDLE"
 echo "Created $BUNDLE.zip"
 '''
 
+[tasks.archives]
+description = "Package every staged binary as a standalone release archive"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=${1:?Usage: mise run archives <version>}
+
+shopt -s nullglob
+dirs=(.release/*/)
+# Testing the first element rather than the array length: mise renders task
+# scripts as templates, and a dollar-brace-hash sequence opens a comment tag.
+[ -n "${dirs[0]:-}" ] || { echo "Nothing staged in .release/ — run 'mise run stage-binary' first." >&2; exit 1; }
+
+for dir in "${dirs[@]}"; do
+  SLOT=$(basename "$dir")
+  [ -f "$dir/sur" ] || { echo "Missing $dir/sur" >&2; exit 1; }
+
+  # `bin/sur` inside the archive means mise puts the same `bin` directory on
+  # PATH on every platform.
+  STAGE=$(mktemp -d)
+  mkdir -p "$STAGE/bin"
+  cp "$dir/sur" "$STAGE/bin/sur"
+  chmod +x "$STAGE/bin/sur"
+
+  # The slot name carries the os and arch tokens mise scores assets on. The
+  # artifact bundle is not a substitute: its name has no tokens, so mise
+  # rejects it with "No matching asset found" on every platform.
+  ARCHIVE="sur-$VERSION-$SLOT.tar.gz"
+  rm -f "$ARCHIVE"
+  # COPYFILE_DISABLE keeps BSD tar from adding ._* AppleDouble entries when the
+  # archive happens to be built on macOS; GNU tar ignores the variable.
+  COPYFILE_DISABLE=1 tar -czf "$ARCHIVE" -C "$STAGE" bin
+  rm -rf "$STAGE"
+
+  echo "Created $ARCHIVE"
+done
+'''
+
 [tasks.publish]
-description = "Commit the release checksum, tag it and upload the bundle (runs on CI)"
+description = "Commit the release checksum, tag it and upload every release asset (runs on CI)"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -156,6 +182,15 @@ BUNDLE_ZIP="sur-$VERSION.artifactbundle.zip"
 
 [ -f "$BUNDLE_ZIP" ] || { echo "Error: $BUNDLE_ZIP not found. Run 'mise run artifactbundle $VERSION' first." >&2; exit 1; }
 command -v gh >/dev/null || { echo "Error: GitHub CLI (gh) is not installed." >&2; exit 1; }
+
+# The bundle carries macOS only, for the SwiftPM binaryTarget. Every platform
+# also ships a plain archive, which is what mise can actually match on.
+shopt -s nullglob
+ARCHIVES=("sur-$VERSION-"*.tar.gz)
+# Testing the first element rather than the array length, for the same
+# templating reason as in the archives task.
+[ -n "${ARCHIVES[0]:-}" ] || { echo "Error: no sur-$VERSION-*.tar.gz found. Run 'mise run archives $VERSION' first." >&2; exit 1; }
+echo "Assets: $BUNDLE_ZIP ${ARCHIVES[*]}"
 
 REPO=${GITHUB_REPOSITORY:-$(git remote get-url origin | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')}
 
@@ -188,7 +223,7 @@ git commit -m "chore: release $VERSION"
 git push origin "$BRANCH"
 
 # gh tags this commit and uploads the artifact in one step.
-gh release create "$VERSION" "$BUNDLE_ZIP" \
+gh release create "$VERSION" "$BUNDLE_ZIP" "${ARCHIVES[@]}" \
   --repo "$REPO" \
   --target "$(git rev-parse HEAD)" \
   --title "$VERSION" \
