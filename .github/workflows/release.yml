@@ -19,6 +19,8 @@ jobs:
   build-macos:
     name: Build macos-arm64
     runs-on: macos-26
+    env:
+      VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v7
 
@@ -29,7 +31,7 @@ jobs:
           "$HOME/.local/bin/mise" trust
 
       - name: Set version
-        run: mise run set-version "${{ inputs.version }}"
+        run: mise run set-version "$VERSION"
 
       - name: Build and stage binary
         run: mise run stage-binary
@@ -42,6 +44,8 @@ jobs:
 
   build-linux:
     name: Build linux-${{ matrix.arch }}
+    env:
+      VERSION: ${{ inputs.version }}
     runs-on: ${{ matrix.runner }}
     container: swift:6.3-jammy
     strategy:
@@ -68,7 +72,7 @@ jobs:
           "$HOME/.local/bin/mise" trust
 
       - name: Set version
-        run: mise run set-version "${{ inputs.version }}"
+        run: mise run set-version "$VERSION"
 
       - name: Build and stage binary
         run: mise run stage-binary
@@ -83,6 +87,8 @@ jobs:
     name: Assemble and publish
     needs: [build-macos, build-linux]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v7
 
@@ -100,18 +106,18 @@ jobs:
           "$HOME/.local/bin/mise" trust
 
       - name: Set version
-        run: mise run set-version "${{ inputs.version }}"
+        run: mise run set-version "$VERSION"
 
       - name: Assemble artifact bundle
-        run: mise run artifactbundle "${{ inputs.version }}"
+        run: mise run artifactbundle "$VERSION"
 
       - name: Package platform archives
-        run: mise run archives "${{ inputs.version }}"
+        run: mise run archives "$VERSION"
 
       - name: Publish release
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mise run publish "${{ inputs.version }}"
+          mise run publish "$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
