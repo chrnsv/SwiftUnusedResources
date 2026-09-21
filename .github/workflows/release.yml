@@ -43,7 +43,7 @@ jobs:
   build-linux:
     name: Build linux-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    container: swift:6.3-noble
+    container: swift:6.3-jammy
     strategy:
       matrix:
         include:

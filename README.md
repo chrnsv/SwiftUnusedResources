@@ -33,8 +33,10 @@ mise downloads the prebuilt binary from GitHub releases, so no Swift toolchain i
 Releases ship binaries for macOS on Apple silicon and for Linux on x86_64 and arm64; mise
 picks the right one on its own, so no extra configuration is required.
 
-The Linux binaries link the Swift runtime statically, so the only thing they need at run time
-is `libxml2`. Most distributions and CI images already have it; minimal containers do not:
+The Linux binaries link the Swift runtime statically and are built on Ubuntu 22.04, so they
+run on any distribution with glibc 2.35 or newer — Ubuntu 22.04, Debian 12 and anything more
+recent. The only shared library they need is `libxml2`. Most distributions and CI images
+already have it; minimal containers do not:
 
 ```shell
 apt-get install -y libxml2
