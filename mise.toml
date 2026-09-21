@@ -1,38 +1,136 @@
+# Semantic Versioning 2.0.0, from https://semver.org ("Is there a suggested
+# regular expression (RegEx) to check a SemVer string?", numbered-groups form).
+# Bash matches POSIX ERE, which has neither `\d` nor `(?:`, so those two are
+# rewritten as `[0-9]` and `(`; nothing else changes. Tasks match with LC_ALL=C
+# because POSIX leaves bracket ranges such as `[a-z]` locale-dependent.
+# Besides rejecting malformed versions, this keeps the value within
+# [0-9A-Za-z.+-], which is safe inside the sed expressions and file names below.
+[vars]
+semver = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*))?$'
+
 [tasks.build]
 description = "Build release binary"
 run = "SKIP_SWIFTLINT=1 swift build -c release --arch arm64 --product sur"
 
-[tasks.artifactbundle]
-description = "Create artifact bundle"
-depends = ["build"]
+[tasks.linux-build]
+description = "Build the Linux binary in a container (Apple `container` CLI)"
 run = '''
 #!/usr/bin/env bash
 set -e
 
-VERSION=$1
-if [ -z "$VERSION" ]; then
-  echo "Error: Version argument is required. Usage: mise run artifactbundle <version>"
+# swift-syntax needs real memory: the 1 GB default makes the VM swap for minutes.
+container run --rm \
+  --cpus 8 --memory 8g \
+  --volume "$PWD:/workspace" --workdir /workspace \
+  --env SKIP_SWIFTLINT=1 \
+  swift:6.3-jammy \
+  swift build -c release --static-swift-stdlib --product sur --scratch-path .build-linux
+'''
+
+[tasks.linux-test]
+description = "Run the test suite on Linux in a container (Apple `container` CLI)"
+run = '''
+#!/usr/bin/env bash
+set -e
+
+container run --rm \
+  --cpus 8 --memory 8g \
+  --volume "$PWD:/workspace" --workdir /workspace \
+  --env SKIP_SWIFTLINT=1 \
+  swift:6.3-jammy \
+  bash -c 'swift build --build-tests --scratch-path .build-linux && swift test --skip-build --scratch-path .build-linux'
+'''
+
+[tasks.set-version]
+description = "Write <version> into the version constant in SUR.swift"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=${1:?Usage: mise run set-version <version>}
+# SemVer 2.0.0 check; the regex and why it matters are described at [vars].
+semver='{{vars.semver}}'
+if ! ( export LC_ALL=C; [[ $VERSION =~ $semver ]] ); then
+  echo "Invalid version '$VERSION': expected Semantic Versioning 2.0.0 (https://semver.org)." >&2
   exit 1
 fi
 
-echo "Creating artifact bundle for SUR version $VERSION..."
+# GNU and BSD sed disagree about -i, so edit through a temp file instead.
+edit() {
+  sed -E "$2" "$1" > "$1.tmp"
+  mv "$1.tmp" "$1"
+}
 
-# Get executable path
-BIN_PATH=$(swift build -c release --arch arm64 --show-bin-path)
-EXECUTABLE_PATH="$BIN_PATH/sur"
+# Only the version constant: the binaryTarget in Package.swift keeps pointing at
+# the previous release until `publish` rewrites it. Repointing it here would make
+# `swift build` fail, because SwiftPM downloads binary artifacts while resolving
+# and the new release does not exist yet.
+edit Sources/SUR/SUR.swift "s/(static let version = \")[^\"]+(\")/\1$VERSION\2/"
 
-# Define bundle paths
-BUNDLE_NAME="sur-$VERSION.artifactbundle"
-BUNDLE_DIR="${BUNDLE_NAME}_tmp"
-mkdir -p "$BUNDLE_DIR/bin"
+echo "Version set to $VERSION"
+'''
 
-# Copy executable
-cp "$EXECUTABLE_PATH" "$BUNDLE_DIR/bin/sur"
+[tasks.stage-binary]
+description = "Build the release binary for the host platform and stage it under .release/"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
 
-strip -rSTx "$BUNDLE_DIR/bin/sur"
+# The slot name doubles as the artifact-bundle directory and picks the triple.
+case "$(uname -s)" in
+  # macOS ships the Swift runtime, so the binary can link against it.
+  Darwin) SLOT="macos-arm64"; BUILD_ARGS=(--arch arm64) ;;
+  # Linux does not: without --static-swift-stdlib the binary needs libswiftCore.so
+  # and friends at run time, which defeats shipping it to toolchain-less machines.
+  Linux)  SLOT="linux-$(uname -m)"; BUILD_ARGS=(--static-swift-stdlib) ;;
+  *) echo "Unsupported host: $(uname -s)" >&2; exit 1 ;;
+esac
 
-# Create info.json
-cat <<EOF > "$BUNDLE_DIR/info.json"
+export SKIP_SWIFTLINT=1
+swift build -c release "${BUILD_ARGS[@]}" --product sur
+
+BIN="$(swift build -c release "${BUILD_ARGS[@]}" --show-bin-path)/sur"
+mkdir -p ".release/$SLOT"
+cp "$BIN" ".release/$SLOT/sur"
+
+# BSD strip and GNU strip take different flags.
+if [ "$(uname -s)" = "Darwin" ]; then
+  strip -rSTx ".release/$SLOT/sur"
+else
+  strip ".release/$SLOT/sur"
+fi
+
+echo "Staged .release/$SLOT/sur"
+'''
+
+[tasks.artifactbundle]
+description = "Assemble the macOS artifact bundle from .release/macos-arm64"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=${1:?Usage: mise run artifactbundle <version>}
+# SemVer 2.0.0 check; the regex and why it matters are described at [vars].
+semver='{{vars.semver}}'
+if ! ( export LC_ALL=C; [[ $VERSION =~ $semver ]] ); then
+  echo "Invalid version '$VERSION': expected Semantic Versioning 2.0.0 (https://semver.org)." >&2
+  exit 1
+fi
+
+# macOS only: the bundle exists for the SwiftPM binaryTarget behind
+# SURBuildToolPlugin, and that plugin only ever runs from Xcode. Linux binaries
+# ship as separate release archives instead of inflating every plugin download.
+SRC=".release/macos-arm64/sur"
+[ -f "$SRC" ] || { echo "Missing $SRC — run 'mise run stage-binary' on macOS first." >&2; exit 1; }
+
+BUNDLE="sur-$VERSION.artifactbundle"
+rm -rf "$BUNDLE" "$BUNDLE.zip"
+
+mkdir -p "$BUNDLE/bin"
+cp "$SRC" "$BUNDLE/bin/sur"
+chmod +x "$BUNDLE/bin/sur"
+
+cat > "$BUNDLE/info.json" <<EOF
 {
     "schemaVersion": "1.0",
     "artifacts": {
@@ -50,95 +148,133 @@ cat <<EOF > "$BUNDLE_DIR/info.json"
 }
 EOF
 
-# Compress the bundle
-BUNDLE_ZIP="$BUNDLE_NAME.zip"
-rm -f "$BUNDLE_ZIP"
-(cd "$BUNDLE_DIR" && zip -q -r "../$BUNDLE_ZIP" .)
+(cd "$BUNDLE" && zip -q -r "../$BUNDLE.zip" .)
+rm -rf "$BUNDLE"
 
-# Clean up
-rm -rf "$BUNDLE_DIR"
-
-echo "Artifact bundle created: $BUNDLE_ZIP"
+echo "Created $BUNDLE.zip"
 '''
 
-[tasks.update-version]
-description = "Update version in Package.swift and SUR.swift"
+[tasks.archives]
+description = "Package every staged binary as a standalone release archive"
 run = '''
 #!/usr/bin/env bash
-set -e
-VERSION=$1
-if [ -z "$VERSION" ]; then
-  echo "Error: Version argument is required. Usage: mise run update-version <version>"
+set -euo pipefail
+
+VERSION=${1:?Usage: mise run archives <version>}
+# SemVer 2.0.0 check; the regex and why it matters are described at [vars].
+semver='{{vars.semver}}'
+if ! ( export LC_ALL=C; [[ $VERSION =~ $semver ]] ); then
+  echo "Invalid version '$VERSION': expected Semantic Versioning 2.0.0 (https://semver.org)." >&2
   exit 1
 fi
 
-# 1. Update Package.swift version in URL
-sed -i '' -E "s|(releases/download/)[^/]+/(sur-).+(\.artifactbundle\.zip)|\1$VERSION/\2$VERSION\3|" Package.swift
+shopt -s nullglob
+dirs=(.release/*/)
+# Testing the first element rather than the array length: mise renders task
+# scripts as templates, and a dollar-brace-hash sequence opens a comment tag.
+[ -n "${dirs[0]:-}" ] || { echo "Nothing staged in .release/ — run 'mise run stage-binary' first." >&2; exit 1; }
 
-# 2. Update version constant in SUR.swift
-sed -i '' -E "s/(static let version = \")[^\"]+(\")/\1$VERSION\2/" Sources/SUR/SUR.swift
+for dir in "${dirs[@]}"; do
+  SLOT=$(basename "$dir")
+  [ -f "$dir/sur" ] || { echo "Missing $dir/sur" >&2; exit 1; }
 
-# 3. Update checksum (if zip exists)
-BUNDLE_ZIP="sur-$VERSION.artifactbundle.zip"
-if [ -f "$BUNDLE_ZIP" ]; then
-    echo "Found $BUNDLE_ZIP, updating checksum..."
-    CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
-    sed -i '' -E "s/(checksum:[[:space:]]*\")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
-    echo "Checksum updated: $CHECKSUM"
-fi
+  # `bin/sur` inside the archive means mise puts the same `bin` directory on
+  # PATH on every platform.
+  STAGE=$(mktemp -d)
+  mkdir -p "$STAGE/bin"
+  cp "$dir/sur" "$STAGE/bin/sur"
+  chmod +x "$STAGE/bin/sur"
 
-echo "Successfully updated version to $VERSION"
+  # The slot name carries the os and arch tokens mise scores assets on. The
+  # artifact bundle is not a substitute: its name has no tokens, so mise
+  # rejects it with "No matching asset found" on every platform.
+  ARCHIVE="sur-$VERSION-$SLOT.tar.gz"
+  rm -f "$ARCHIVE"
+  # COPYFILE_DISABLE keeps BSD tar from adding ._* AppleDouble entries when the
+  # archive happens to be built on macOS; GNU tar ignores the variable.
+  COPYFILE_DISABLE=1 tar -czf "$ARCHIVE" -C "$STAGE" bin
+  rm -rf "$STAGE"
+
+  echo "Created $ARCHIVE"
+done
 '''
 
 [tasks.publish]
-description = "Publish release to GitHub (upstream)"
+description = "Commit the release checksum, tag it and upload every release asset (runs on CI)"
 run = '''
 #!/usr/bin/env bash
-set -e
-VERSION=$1
-if [ -z "$VERSION" ]; then
-  echo "Error: Version argument is required. Usage: mise run publish <version>"
+set -euo pipefail
+
+VERSION=${1:?Usage: mise run publish <version>}
+# SemVer 2.0.0 check; the regex and why it matters are described at [vars].
+semver='{{vars.semver}}'
+if ! ( export LC_ALL=C; [[ $VERSION =~ $semver ]] ); then
+  echo "Invalid version '$VERSION': expected Semantic Versioning 2.0.0 (https://semver.org)." >&2
   exit 1
 fi
-
 BUNDLE_ZIP="sur-$VERSION.artifactbundle.zip"
 
-if [ ! -f "$BUNDLE_ZIP" ]; then
-    echo "Error: $BUNDLE_ZIP not found. Run 'mise run artifactbundle $VERSION' first."
-    exit 1
+[ -f "$BUNDLE_ZIP" ] || { echo "Error: $BUNDLE_ZIP not found. Run 'mise run artifactbundle $VERSION' first." >&2; exit 1; }
+command -v gh >/dev/null || { echo "Error: GitHub CLI (gh) is not installed." >&2; exit 1; }
+
+# The bundle carries macOS only, for the SwiftPM binaryTarget. Every platform
+# also ships a plain archive, which is what mise can actually match on.
+shopt -s nullglob
+ARCHIVES=("sur-$VERSION-"*.tar.gz)
+# Testing the first element rather than the array length, for the same
+# templating reason as in the archives task.
+[ -n "${ARCHIVES[0]:-}" ] || { echo "Error: no sur-$VERSION-*.tar.gz found. Run 'mise run archives $VERSION' first." >&2; exit 1; }
+echo "Assets: $BUNDLE_ZIP ${ARCHIVES[*]}"
+
+REPO=${GITHUB_REPOSITORY:-$(git remote get-url origin | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')}
+
+# SwiftPM's compute-checksum is the SHA-256 of the archive, so a plain hash
+# works here and keeps this task free of a Swift toolchain.
+if command -v shasum >/dev/null; then
+  CHECKSUM=$(shasum -a 256 "$BUNDLE_ZIP" | cut -d' ' -f1)
+else
+  CHECKSUM=$(sha256sum "$BUNDLE_ZIP" | cut -d' ' -f1)
 fi
 
-if ! command -v gh &> /dev/null; then
-    echo "Error: GitHub CLI (gh) is not installed. Install with: brew install gh"
-    exit 1
-fi
-
-REMOTE="upstream"
-REPO=$(git remote get-url "$REMOTE" | sed -E 's#(git@|https://)github.com[:/]##; s#\.git$##')
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-# The asset download URL is deterministic — it is derived from the tag name and
-# the file name — so it can be written into Package.swift before the release
-# exists. No draft, no API round-trip, no second commit.
+# The asset URL is deterministic — tag name plus file name — so it can be
+# written into Package.swift before the release exists.
 ASSET_URL="https://github.com/$REPO/releases/download/$VERSION/$BUNDLE_ZIP"
-CHECKSUM=$(swift package compute-checksum "$BUNDLE_ZIP")
 echo "Asset URL: $ASSET_URL"
 echo "Checksum:  $CHECKSUM"
 
-# Point the binaryTarget at the upcoming release asset. Only the binaryTarget
-# URL (a GitHub *releases* URL) is rewritten, never the .package(url:) deps.
-sed -i '' -E "s|url: \"https://[^\"]*releases[^\"]*\"|url: \"$ASSET_URL\"|" Package.swift
-sed -i '' -E "s/(checksum: \")[^\"]+(\")/\1$CHECKSUM\2/" Package.swift
-echo "Package.swift updated."
+edit() {
+  sed -E "$2" "$1" > "$1.tmp"
+  mv "$1.tmp" "$1"
+}
 
-# Commit and push so the release tag lands on the commit referencing the asset.
-git add Package.swift
-git commit -m "chore: update binaryTarget URL and checksum for $VERSION"
-git push "$REMOTE" "$BRANCH"
+# Only the binaryTarget URL (a GitHub *releases* URL) is rewritten, never the .package(url:) deps.
+edit Package.swift "s|url: \"https://[^\"]*releases[^\"]*\"|url: \"$ASSET_URL\"|"
+edit Package.swift "s/(checksum: \")[^\"]+(\")/\1$CHECKSUM\2/"
 
-# Create the release: gh tags this commit and uploads the artifact in one step.
-echo "Creating release $VERSION in $REPO..."
-gh release create "$VERSION" "$BUNDLE_ZIP" --repo "$REPO" --target "$(git rev-parse HEAD)" --title "$VERSION" --generate-notes
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+git add Package.swift Sources/SUR/SUR.swift
+git commit -m "chore: release $VERSION"
+git push origin "$BRANCH"
 
-echo "Release $VERSION published successfully."
+# gh tags this commit and uploads the artifact in one step.
+gh release create "$VERSION" "$BUNDLE_ZIP" "${ARCHIVES[@]}" \
+  --repo "$REPO" \
+  --target "$(git rev-parse HEAD)" \
+  --title "$VERSION" \
+  --generate-notes
+
+echo "Release $VERSION published."
+'''
+
+[tasks.release]
+description = "Trigger the release workflow on CI"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=${1:?Usage: mise run release <version>}
+command -v gh >/dev/null || { echo "Error: GitHub CLI (gh) is not installed." >&2; exit 1; }
+
+gh workflow run release.yml --field version="$VERSION"
+echo "Release workflow triggered for $VERSION. Follow it with: gh run watch"
 '''

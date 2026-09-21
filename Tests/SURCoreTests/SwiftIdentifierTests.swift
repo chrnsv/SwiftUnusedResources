@@ -48,6 +48,27 @@ struct SwiftIdentifierTests {
         #expect(identifier("icon.name") == "iconName")
     }
 
+    // Emoji are deliberately allowed in identifiers rather than treated as separators.
+    @Test(
+        "Keeps emoji, including the last scalar of each allowed range",
+        arguments: [
+            "\u{2600}", "\u{27BF}",
+            "\u{1F300}", "\u{1F6FF}",
+            "\u{1F900}", "\u{1F9FF}",
+            "\u{1F1E6}", "\u{1F1FF}",
+        ]
+    )
+    func keepsEmoji(emoji: String) {
+        #expect(identifier("icon\(emoji)") == "icon\(emoji)")
+    }
+
+    // U+2FFFF is a permanent noncharacter, so it stays blacklisted. Guards against
+    // rebuilding the blacklist in a way that drops the supplementary planes.
+    @Test("Strips a blacklisted character outside the Basic Multilingual Plane")
+    func stripsSupplementaryPlaneCharacter() {
+        #expect(identifier("icon\u{2FFFF}") == "icon")
+    }
+
     // MARK: - Leading digits
 
     @Test("Strips leading digits")

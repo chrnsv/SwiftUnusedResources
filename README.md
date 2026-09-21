@@ -30,7 +30,17 @@ Alternatively, add it to your project's `mise.toml` by hand and run `mise instal
 Replace `latest` with a release tag to pin a specific version.
 
 mise downloads the prebuilt binary from GitHub releases, so no Swift toolchain is needed.
-The binary is built for Apple silicon only.
+Releases ship binaries for macOS on Apple silicon and for Linux on x86_64 and arm64; mise
+picks the right one on its own, so no extra configuration is required.
+
+The Linux binaries link the Swift runtime statically and are built on Ubuntu 22.04, so they
+run on any distribution with glibc 2.35 or newer — Ubuntu 22.04, Debian 12 and anything more
+recent. The only shared library they need is `libxml2`. Most distributions and CI images
+already have it; minimal containers do not:
+
+```shell
+apt-get install -y libxml2
+```
 
 ### Compile from source
 
@@ -40,6 +50,9 @@ cd SwiftUnusedResources
 swift build -c release
 cp .build/release/sur /usr/local/bin/sur
 ```
+
+`sur` builds and runs on Linux as well as macOS; Swift 6.3 or newer is required.
+Note that the `SURBuildToolPlugin` is only useful from Xcode.
 
 ### Xcode Package Dependency
 
@@ -213,3 +226,47 @@ takes at least one sample. `fs.discovery`, `swift.parse.*` and `xib.parse` run o
 file found, ignoring `sur.yml`; `analyze` runs on the resources and usages a real `Explorer` pass
 collected, so it (like `e2e`) honors `sur.yml`.
 Treat median deltas under ~5 % as noise. `Scripts/bench-e2e.sh` times the `sur` binary itself.
+
+## Releasing
+
+Releases are built entirely on CI, so every published version carries binaries for all
+supported platforms:
+
+```shell
+mise run release 0.5.0
+```
+
+That triggers the `Release` workflow, which builds `sur` on a macOS runner and on native
+x86_64 and arm64 Linux runners, packages the results, writes the artifact bundle URL and
+checksum into `Package.swift`, commits, tags and publishes the release.
+
+The workflow drives the same mise tasks that are available locally:
+
+| Task | Purpose |
+| --- | --- |
+| `set-version <version>` | Writes the version constant into `SUR.swift`. |
+| `stage-binary` | Builds the release binary for the host platform into `.release/<slot>/`. |
+| `artifactbundle <version>` | Packs the macOS binary as `sur-<version>.artifactbundle.zip`. |
+| `archives <version>` | Packs every staged binary as `sur-<version>-<slot>.tar.gz`. |
+| `publish <version>` | Writes the URL and checksum, commits, tags and uploads every asset. |
+
+A release therefore carries two kinds of assets, and they are not interchangeable:
+
+- **`sur-<version>.artifactbundle.zip`** backs the `SURBinary` binary target behind
+  `SURBuildToolPlugin`. The plugin only ever runs from Xcode, so the bundle holds the macOS
+  binary alone rather than growing with every platform.
+- **`sur-<version>-<os>-<arch>.tar.gz`** is what installers consume. mise scores assets on
+  the os and arch tokens in their names, so it cannot match the bundle — its name carries
+  none — and needs these archives on macOS just as much as on Linux.
+
+`Package.swift` keeps pointing at the previous release until `publish` runs: SwiftPM
+downloads binary artifacts while resolving, so repointing `SURBinary` any earlier would
+break the builds that produce the very bundle it refers to.
+
+To check the Linux build without waiting for CI, run it in a container
+([Apple's `container`](https://github.com/apple/container)):
+
+```shell
+mise run linux-build   # release binary
+mise run linux-test    # full test suite
+```

@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, for example 0.5.0
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macos-arm64
+    runs-on: macos-26
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install mise
+        run: |
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" trust
+
+      - name: Set version
+        run: mise run set-version "$VERSION"
+
+      - name: Build and stage binary
+        run: mise run stage-binary
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-arm64
+          path: .release/macos-arm64/sur
+          if-no-files-found: error
+
+  build-linux:
+    name: Build linux-${{ matrix.arch }}
+    env:
+      VERSION: ${{ inputs.version }}
+    runs-on: ${{ matrix.runner }}
+    container: swift:6.3-jammy
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      # The container runs as root while the checkout is owned by the runner user.
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # The Swift image is minimal and ships no curl, so install one first.
+      - name: Install mise
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends curl
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" trust
+
+      - name: Set version
+        run: mise run set-version "$VERSION"
+
+      - name: Build and stage binary
+        run: mise run stage-binary
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: .release/linux-${{ matrix.arch }}/sur
+          if-no-files-found: error
+
+  publish:
+    name: Assemble and publish
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Each artifact lands in .release/<slot>/sur, which is the layout the
+      # artifactbundle task expects. Upload does not preserve the executable
+      # bit; the task restores it.
+      - uses: actions/download-artifact@v8
+        with:
+          path: .release
+
+      - name: Install mise
+        run: |
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" trust
+
+      - name: Set version
+        run: mise run set-version "$VERSION"
+
+      - name: Assemble artifact bundle
+        run: mise run artifactbundle "$VERSION"
+
+      - name: Package platform archives
+        run: mise run archives "$VERSION"
+
+      - name: Publish release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mise run publish "$VERSION"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

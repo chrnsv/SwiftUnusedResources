@@ -1,6 +1,10 @@
 import Foundation
 import PathKit
 
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
+
 package struct XibParser: Sendable {
     package init() {}
 
@@ -18,8 +22,16 @@ package struct XibParser: Sendable {
         let collector = ResourcesCollector()
         parser.delegate = collector
         
-        guard parser.parse() else {
-            throw parser.parserError ?? XibParserError.malformed
+        // `parse()` alone is not a portable success signal: on Linux a prematurely
+        // ended document still returns `true` while reporting a `parserError`.
+        let parsed = parser.parse()
+
+        if let error = parser.parserError {
+            throw error
+        }
+
+        guard parsed else {
+            throw XibParserError.malformed
         }
         
         return collector.usages
