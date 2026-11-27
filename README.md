@@ -80,6 +80,7 @@ sur --project path/to/App.xcodeproj --target App
 | --- | --- |
 | `-p`, `--project` | Path to the `.xcodeproj`. Defaults to the one in the current directory. |
 | `-t`, `--target` | Target to check. All targets are checked when omitted. |
+| `--xcode-warnings` | Report each finding as an Xcode warning instead of a summary. On by default inside an Xcode build. |
 | `-v`, `--version` | Show the version. |
 
 ## Xcode integration

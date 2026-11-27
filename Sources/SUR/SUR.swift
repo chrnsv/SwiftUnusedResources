@@ -25,6 +25,9 @@ struct SUR: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Project's target. Skip to process all targets.")
     var target: String?
 
+    @Flag(name: .long, help: "Report each finding as an Xcode warning instead of a summary. Implied inside an Xcode build.")
+    var xcodeWarnings = false
+
     @Flag(name: [.customShort("v"), .long], help: "Show the version.")
     var version = false
 
@@ -34,7 +37,9 @@ struct SUR: AsyncParsableCommand {
             return
         }
 
-        let showWarnings = ProcessInfo.processInfo.environment["XCODE_PRODUCT_BUILD_VERSION"] != nil
+        // A Run Script phase calls sur without arguments, so an Xcode build is also
+        // recognized by the environment it gets.
+        let showWarnings = xcodeWarnings || ProcessInfo.processInfo.environment["XCODE_PRODUCT_BUILD_VERSION"] != nil
 
         let projectPath: Path
 
