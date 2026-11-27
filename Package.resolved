@@ -1,13 +1,13 @@
 {
-  "originHash" : "261724a3060ca45394fa888c8fa2647e38afc4d8a3e5c1175a70d9b38b6976a8",
+  "originHash" : "ed52cefa90529e0869073a0313ff251946b04949697b1672d6d0d90a96cfab8d",
   "pins" : [
     {
       "identity" : "aexml",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tadija/AEXML.git",
       "state" : {
-        "revision" : "db806756c989760b35108146381535aec231092b",
-        "version" : "4.7.0"
+        "revision" : "d2083adcf4d1383c858f5d3d0f24256459d3f59a",
+        "version" : "4.7.4"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/onevcat/Rainbow.git",
       "state" : {
-        "revision" : "cdf146ae671b2624917648b61c908d1244b98ca1",
-        "version" : "4.2.1"
+        "revision" : "711ca908ca19d16e577d575c8d0a48151a16bb1b",
+        "version" : "4.2.2"
       }
     },
     {
@@ -78,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tuist/XcodeProj.git",
       "state" : {
-        "revision" : "d07b7e172277ddc49f71a305eb13a0b19d3296cb",
-        "version" : "9.17.4"
+        "revision" : "a97494b14b5ba3184b48c050d034c7534356e0ae",
+        "version" : "9.17.8"
       }
     },
     {
