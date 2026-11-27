@@ -12,16 +12,27 @@ concurrency:
 jobs:
   test:
     name: Build & test
-    runs-on: macos-26
+    # The only GitHub-hosted image with Xcode 27. Its default Xcode is 27.1, so the
+    # latest one is selected explicitly.
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7
 
+      # Modules built by another compiler version cannot be reused, so the Xcode
+      # version is part of the key. Keep it in sync with DEVELOPER_DIR.
       - uses: actions/cache@v6
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          key: spm-${{ runner.os }}-xcode-27.2-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
+            spm-${{ runner.os }}-xcode-27.2-
+
+      - name: Print toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
 
       - name: Build
         run: swift build --build-tests
@@ -36,7 +47,8 @@ jobs:
   test-linux:
     name: Build & test (Linux)
     runs-on: ubuntu-latest
-    container: swift:6.3-jammy
+    # Same image as the Linux release build in release.yml.
+    container: swift:6.4-jammy
     steps:
       - uses: actions/checkout@v7
 

@@ -23,7 +23,7 @@ container run --rm \
   --cpus 8 --memory 8g \
   --volume "$PWD:/workspace" --workdir /workspace \
   --env SKIP_SWIFTLINT=1 \
-  swift:6.3-jammy \
+  swift:6.4-jammy \
   swift build -c release --static-swift-stdlib --product sur --scratch-path .build-linux
 '''
 
@@ -37,7 +37,7 @@ container run --rm \
   --cpus 8 --memory 8g \
   --volume "$PWD:/workspace" --workdir /workspace \
   --env SKIP_SWIFTLINT=1 \
-  swift:6.3-jammy \
+  swift:6.4-jammy \
   bash -c 'swift build --build-tests --scratch-path .build-linux && swift test --skip-build --scratch-path .build-linux'
 '''
 
