@@ -82,8 +82,8 @@ let package = Package(
         ),
         .binaryTarget(
             name: "SURBinary",
-            url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/0.4.0/sur-0.4.0.artifactbundle.zip",
-            checksum: "be08ec4a61e1772189a04c93e5caf8012f23cf981e55a34756ed2bf1dc2ce8d8"
+            url: "https://github.com/mugabe/SwiftUnusedResources/releases/download/0.5.0/sur-0.5.0.artifactbundle.zip",
+            checksum: "8f9bf3f76bcf4720916a59be01e1ab066c8243c8740f80685b260e5ad7f268bf"
         ),
         .testTarget(
             name: "SURCoreTests",
