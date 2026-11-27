@@ -51,7 +51,7 @@ swift build -c release
 cp .build/release/sur /usr/local/bin/sur
 ```
 
-`sur` builds and runs on Linux as well as macOS; Swift 6.3 or newer is required.
+`sur` builds and runs on Linux as well as macOS; Swift 6.4 or newer is required.
 Note that the `SURBuildToolPlugin` is only useful from Xcode.
 
 ### Xcode Package Dependency

@@ -18,9 +18,11 @@ permissions:
 jobs:
   build-macos:
     name: Build macos-arm64
-    runs-on: macos-26
+    # Same image and Xcode as the macOS checks in tests.yml.
+    runs-on: xcode-27
     env:
       VERSION: ${{ inputs.version }}
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7
 
@@ -47,14 +49,16 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
     runs-on: ${{ matrix.runner }}
-    container: swift:6.3-jammy
+    # Jammy rather than a newer Ubuntu: the binary still links the system glibc, and
+    # building against 2.35 keeps it running on Ubuntu 22.04 and Debian 12.
+    container: swift:6.4-jammy
     strategy:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-latest
+            runner: ubuntu-26.04
           - arch: aarch64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@v7
 
