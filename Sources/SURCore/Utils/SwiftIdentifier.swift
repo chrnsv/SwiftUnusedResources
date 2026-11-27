@@ -187,26 +187,34 @@ extension Sequence {
 }
 
 private let blacklistedCharacters: CharacterSet = {
-  let blacklist = NSMutableCharacterSet(charactersIn: "")
-  blacklist.formUnion(with: CharacterSet.whitespacesAndNewlines)
-  blacklist.formUnion(with: CharacterSet.punctuationCharacters)
-  blacklist.formUnion(with: CharacterSet.symbols)
-  blacklist.formUnion(with: CharacterSet.illegalCharacters)
-  blacklist.formUnion(with: CharacterSet.controlCharacters)
-  blacklist.removeCharacters(in: "_")
+  var blacklist = CharacterSet()
+  blacklist.formUnion(.whitespacesAndNewlines)
+  blacklist.formUnion(.punctuationCharacters)
+  blacklist.formUnion(.symbols)
+  blacklist.formUnion(.illegalCharacters)
+  blacklist.formUnion(.controlCharacters)
+  blacklist.remove(charactersIn: "_")
 
   // Emoji ranges, roughly based on http://www.unicode.org/Public/emoji/1.0//emoji-data.txt
-  [
-    0x2600...0x27BF,
-    0x1F300...0x1F6FF,
-    0x1F900...0x1F9FF,
-    0x1F1E6...0x1F1FF,
-  ].forEach {
-    let range = NSRange(location: $0.lowerBound, length: $0.upperBound - $0.lowerBound)
-    blacklist.removeCharacters(in: range)
+  for range in [
+    0x2600 ... 0x27BF,
+    0x1F300 ... 0x1F6FF,
+    0x1F900 ... 0x1F9FF,
+    0x1F1E6 ... 0x1F1FF,
+  ] {
+    guard
+      let lower = Unicode.Scalar(UInt32(range.lowerBound)),
+      let upper = Unicode.Scalar(UInt32(range.upperBound))
+    else {
+      continue
+    }
+
+    // `remove(charactersIn:)`, not `subtract(CharacterSet(charactersIn:))`:
+    // the latter silently drops the supplementary planes from the receiver.
+    blacklist.remove(charactersIn: lower ... upper)
   }
 
-  return blacklist as CharacterSet
+  return blacklist
 }()
 
 // Based on https://docs.swift.org/swift-book/ReferenceManual/LexicalStructure.html#ID413

@@ -8,15 +8,15 @@ struct WarningSkipTests {
     /// Parses `source` with warnings enabled and returns everything printed to stdout.
     private func warnings(for source: String) -> String {
         let pipe = Pipe()
-        let original = dup(fileno(stdout))
-        fflush(stdout)
-        dup2(pipe.fileHandleForWriting.fileDescriptor, fileno(stdout))
+        let original = dup(STDOUT_FILENO)
+        fflush(nil)
+        dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
 
         let parser = SwiftParser(showWarnings: true, kinds: [.image, .color])
         _ = parser.parse(source: source)
 
-        fflush(stdout)
-        dup2(original, fileno(stdout))
+        fflush(nil)
+        dup2(original, STDOUT_FILENO)
         close(original)
         pipe.fileHandleForWriting.closeFile()
 
